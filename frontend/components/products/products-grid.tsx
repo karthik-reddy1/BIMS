@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import {
@@ -11,14 +11,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ProductCard } from "@/components/products/product-card"
+import api from "@/lib/api"
+import type { ApiProduct } from "@/lib/types"
 
 export type Product = {
+  productId: string
   name: string
   mrp: number
   perCase: number
   bottlesPerCase: number
   size: string
   stock: number
+  filledCases: number
+  filledLoose: number
   type: "RGB" | "PET" | "CAN"
   brand: string
   returnable: boolean
@@ -27,88 +32,53 @@ export type Product = {
   shopsOwe?: number
 }
 
-const products: Product[] = [
-  {
-    name: "Thumbsup RGB 300ml",
-    mrp: 20,
-    perCase: 300,
-    bottlesPerCase: 24,
-    size: "300ml",
-    stock: 240,
-    type: "RGB",
-    brand: "CSD Flavour",
-    returnable: true,
-    empties: { good: 40, broken: 5 },
-    oweCompany: 320,
-    shopsOwe: 120,
-  },
-  {
-    name: "Sprite PET 500ml",
-    mrp: 30,
-    perCase: 360,
-    bottlesPerCase: 24,
-    size: "500ml",
-    stock: 120,
-    type: "PET",
-    brand: "CSD Flavour",
-    returnable: false,
-  },
-  {
-    name: "Fanta RGB 300ml",
-    mrp: 20,
-    perCase: 300,
-    bottlesPerCase: 24,
-    size: "300ml",
-    stock: 180,
-    type: "RGB",
-    brand: "CSD Flavour",
-    returnable: true,
-    empties: { good: 30, broken: 2 },
-    oweCompany: 200,
-    shopsOwe: 80,
-  },
-  {
-    name: "Coke CAN 330ml",
-    mrp: 40,
-    perCase: 480,
-    bottlesPerCase: 24,
-    size: "330ml",
-    stock: 96,
-    type: "CAN",
-    brand: "CSD Flavour",
-    returnable: false,
-  },
-  {
-    name: "Maaza RGB 200ml",
-    mrp: 15,
-    perCase: 240,
-    bottlesPerCase: 24,
-    size: "200ml",
-    stock: 50,
-    type: "RGB",
-    brand: "Maaza",
-    returnable: true,
-    empties: { good: 15, broken: 3 },
-    oweCompany: 100,
-    shopsOwe: 40,
-  },
-  {
-    name: "Pepsi PET 1L",
-    mrp: 50,
-    perCase: 600,
-    bottlesPerCase: 12,
-    size: "1L",
-    stock: 60,
-    type: "PET",
-    brand: "CSD Flavour",
-    returnable: false,
-  },
-]
+function mapApiProduct(p: ApiProduct): Product {
+  return {
+    productId: p.productId,
+    name: p.productName,
+    mrp: p.mrp,
+    perCase: p.casePrice,
+    bottlesPerCase: p.bottlesPerCase,
+    size: p.size,
+    stock: p.filledStock.totalBottles,
+    filledCases: p.filledStock.cases,
+    filledLoose: p.filledStock.looseBottles,
+    type: p.packType as "RGB" | "PET" | "CAN",
+    brand: p.brand,
+    returnable: p.isReturnable,
+    empties: p.isReturnable
+      ? { good: p.emptyStock.good, broken: p.emptyStock.broken }
+      : undefined,
+    oweCompany: p.isReturnable ? p.returnableAccounts.companyOwed : undefined,
+    shopsOwe: p.isReturnable ? p.returnableAccounts.shopsOwed : undefined,
+  }
+}
 
 export function ProductsGrid() {
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [packType, setPackType] = useState("all")
   const [brand, setBrand] = useState("all")
+
+  const fetchProducts = useCallback(async () => {
+    try {
+      setLoading(true)
+      const res = await api.get<ApiProduct[]>("/products")
+      setProducts(res.data.map(mapApiProduct))
+      setError(null)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load products")
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchProducts() }, [fetchProducts])
+
+  // Derive unique brands from fetched products
+  const brands = Array.from(new Set(products.map((p) => p.brand)))
 
   const filtered = products.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase())
@@ -138,6 +108,8 @@ export function ProductsGrid() {
             <SelectItem value="RGB">RGB</SelectItem>
             <SelectItem value="PET">PET</SelectItem>
             <SelectItem value="CAN">CAN</SelectItem>
+            <SelectItem value="TTP">TTP</SelectItem>
+            <SelectItem value="MTP">MTP</SelectItem>
           </SelectContent>
         </Select>
         <Select value={brand} onValueChange={setBrand}>
@@ -146,17 +118,46 @@ export function ProductsGrid() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Brands</SelectItem>
-            <SelectItem value="CSD Flavour">CSD Flavour</SelectItem>
-            <SelectItem value="Maaza">Maaza</SelectItem>
+            {brands.map((b) => (
+              <SelectItem key={b} value={b}>
+                {b}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map((product) => (
-          <ProductCard key={product.name} product={product} />
-        ))}
-      </div>
+      {loading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div
+              key={i}
+              className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg border border-border p-5 h-52 animate-pulse"
+            />
+          ))}
+        </div>
+      )}
+
+      {error && (
+        <div className="text-center py-12 text-destructive">
+          <p className="font-medium">Failed to load products</p>
+          <p className="text-sm text-muted-foreground mt-1">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && filtered.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <p>No products found.</p>
+        </div>
+      )}
+
+      {!loading && !error && filtered.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map((product) => (
+            <ProductCard key={product.productId} product={product} onSaved={fetchProducts} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { Phone, ShoppingCart, Eye, CreditCard, Wine } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import type { Company } from "@/lib/company-data"
+import type { Company } from "@/components/companies/companies-content"
 
 export function CompanyCard({
   company,
@@ -51,9 +51,8 @@ export function CompanyCard({
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-muted-foreground">Outstanding</span>
               <span
-                className={`text-xl font-bold ${
-                  company.outstanding > 0 ? "text-destructive" : "text-success"
-                }`}
+                className={`text-xl font-bold ${company.outstanding > 0 ? "text-destructive" : "text-success"
+                  }`}
               >
                 {"\u20B9"}{company.outstanding.toLocaleString("en-IN")}
               </span>

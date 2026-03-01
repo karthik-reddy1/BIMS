@@ -21,88 +21,141 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { Company } from "@/lib/company-data"
+import type { Company } from "@/components/companies/companies-content"
+import type { ApiPurchase } from "@/lib/types"
+import api from "@/lib/api"
 
 export function MakePaymentDialog({
   company,
+  pendingPurchases,
   open,
   onOpenChange,
+  onSaved,
 }: {
   company: Company
+  pendingPurchases: ApiPurchase[]
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSaved?: () => void
 }) {
   const [paymentAmount, setPaymentAmount] = useState("")
   const [paymentMode, setPaymentMode] = useState("")
   const [reference, setReference] = useState("")
   const [notes, setNotes] = useState("")
   const [selectedBills, setSelectedBills] = useState<string[]>([])
-
-  const pendingPurchases = company.purchases.filter((p) => p.status === "pending")
-
-  const selectedTotal = useMemo(() => {
-    return pendingPurchases
-      .filter((p) => selectedBills.includes(p.id))
-      .reduce((sum, p) => sum + p.amount, 0)
-  }, [selectedBills, pendingPurchases])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const remaining = company.outstanding - (Number(paymentAmount) || 0)
 
-  const toggleBill = (id: string) => {
+  const toggleBill = (purchaseId: string, amount: number) => {
     setSelectedBills((prev) => {
-      const next = prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]
+      const next = prev.includes(purchaseId)
+        ? prev.filter((b) => b !== purchaseId)
+        : [...prev, purchaseId]
       const total = pendingPurchases
-        .filter((p) => next.includes(p.id))
-        .reduce((sum, p) => sum + p.amount, 0)
+        .filter((p) => next.includes(p.purchaseId))
+        .reduce((sum, p) => sum + p.grandTotal, 0)
       setPaymentAmount(String(total))
       return next
     })
   }
 
-  const handleSubmit = () => {
-    onOpenChange(false)
+  const reset = () => {
     setPaymentAmount("")
     setPaymentMode("")
     setReference("")
     setNotes("")
     setSelectedBills([])
+    setError(null)
+  }
+
+  const handleSubmit = async () => {
+    const amount = Number(paymentAmount)
+    if (!amount || amount <= 0) {
+      setError("Please enter a valid payment amount")
+      return
+    }
+    if (!paymentMode) {
+      setError("Please select a payment mode")
+      return
+    }
+    try {
+      setSaving(true)
+      setError(null)
+      // Pay each selected purchase individually
+      if (selectedBills.length > 0) {
+        for (const purchaseId of selectedBills) {
+          const purchase = pendingPurchases.find((p) => p.purchaseId === purchaseId)
+          if (!purchase) continue
+          await api.put(`/purchases/${purchaseId}/payment`, {
+            amount: purchase.grandTotal,
+            paymentMode,
+            paymentDate: new Date().toISOString(),
+          })
+        }
+      } else {
+        // Partial payment on most recent pending purchase
+        const first = pendingPurchases[0]
+        if (first) {
+          await api.put(`/purchases/${first.purchaseId}/payment`, {
+            amount,
+            paymentMode,
+            paymentDate: new Date().toISOString(),
+          })
+        }
+      }
+      onSaved?.()
+      onOpenChange(false)
+      reset()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to record payment")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o) }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto backdrop-blur-xl bg-white/95 rounded-2xl p-0 border border-border">
         <DialogHeader className="p-8 pb-0">
           <DialogTitle className="text-2xl font-bold text-foreground">Make Payment</DialogTitle>
         </DialogHeader>
 
         <div className="p-8 pt-6 flex flex-col gap-5">
+          {error && (
+            <p className="text-sm text-destructive bg-destructive/5 rounded-lg px-3 py-2">{error}</p>
+          )}
+
           {/* Outstanding display */}
           <div className="bg-destructive/5 rounded-lg p-4 flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Outstanding Amount</span>
             <span className="text-2xl font-bold text-destructive">
-              {"\u20B9"}{company.outstanding.toLocaleString("en-IN")}
+              ₹{company.outstanding.toLocaleString("en-IN")}
             </span>
           </div>
 
           {/* Select Bills */}
           {pendingPurchases.length > 0 && (
             <div className="flex flex-col gap-3">
-              <Label className="text-foreground">Select Bills to Pay</Label>
+              <Label className="text-foreground">Select Purchases to Pay</Label>
               <div className="flex flex-col gap-2">
                 {pendingPurchases.map((purchase) => (
                   <label
-                    key={purchase.id}
+                    key={purchase.purchaseId}
                     className="flex items-center gap-3 bg-white/60 border border-border rounded-lg p-3 cursor-pointer hover:bg-muted/50 transition-colors"
                   >
                     <Checkbox
-                      checked={selectedBills.includes(purchase.id)}
-                      onCheckedChange={() => toggleBill(purchase.id)}
+                      checked={selectedBills.includes(purchase.purchaseId)}
+                      onCheckedChange={() => toggleBill(purchase.purchaseId, purchase.grandTotal)}
                     />
-                    <span className="text-sm font-medium text-foreground flex-1">{purchase.id}</span>
+                    <span className="text-sm font-medium text-foreground flex-1">{purchase.purchaseId}</span>
                     <span className="text-sm font-medium text-foreground">
-                      {"\u20B9"}{purchase.amount.toLocaleString("en-IN")}
+                      ₹{purchase.grandTotal.toLocaleString("en-IN")}
                     </span>
-                    <span className="text-xs text-muted-foreground">{purchase.date}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(purchase.purchaseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -115,7 +168,7 @@ export function MakePaymentDialog({
           <div className="flex flex-col gap-2">
             <Label className="text-foreground">Payment Amount</Label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{"\u20B9"}</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
               <Input
                 type="number"
                 value={paymentAmount}
@@ -140,16 +193,6 @@ export function MakePaymentDialog({
                 <SelectItem value="cheque">Cheque</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-
-          {/* Payment Date */}
-          <div className="flex flex-col gap-2">
-            <Label className="text-foreground">Payment Date</Label>
-            <Input
-              type="date"
-              defaultValue={new Date().toISOString().split("T")[0]}
-              className="bg-white/80 border-border"
-            />
           </div>
 
           {/* Reference */}
@@ -178,26 +221,21 @@ export function MakePaymentDialog({
           {/* Remaining */}
           <div className="bg-primary/5 rounded-lg p-4 flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Remaining Outstanding</span>
-            <span
-              className={`text-lg font-bold ${
-                remaining > 0 ? "text-destructive" : remaining === 0 ? "text-success" : "text-foreground"
-              }`}
-            >
-              {"\u20B9"}{Math.max(0, remaining).toLocaleString("en-IN")}
+            <span className={`text-lg font-bold ${remaining > 0 ? "text-destructive" : remaining === 0 ? "text-success" : "text-foreground"}`}>
+              ₹{Math.max(0, remaining).toLocaleString("en-IN")}
             </span>
           </div>
 
           {/* Buttons */}
           <div className="flex justify-end gap-3 pt-1">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <Button variant="ghost" onClick={() => { onOpenChange(false); reset() }}>Cancel</Button>
             <Button
               className="bg-success text-success-foreground hover:bg-success/90"
               onClick={handleSubmit}
+              disabled={saving}
             >
               <Check className="h-4 w-4 mr-2" />
-              Record Payment
+              {saving ? "Recording…" : "Record Payment"}
             </Button>
           </div>
         </div>

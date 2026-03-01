@@ -1,65 +1,96 @@
-import { TrendingUp, ShoppingCart, Package, AlertTriangle } from "lucide-react"
+"use client"
 
-const stats = [
-  {
-    icon: TrendingUp,
-    iconColor: "text-primary",
-    iconBg: "bg-primary/10",
-    label: "Today's Sales",
-    value: "\u20B912,500",
-    subtext: "+12% from yesterday",
-    subtextColor: "text-success",
-  },
-  {
-    icon: ShoppingCart,
-    iconColor: "text-success",
-    iconBg: "bg-success/10",
-    label: "Today's Purchases",
-    value: "\u20B98,000",
-    subtext: "3 suppliers",
-    subtextColor: "text-muted-foreground",
-  },
-  {
-    icon: Package,
-    iconColor: "text-warning",
-    iconBg: "bg-warning/10",
-    label: "Empty Bottles",
-    value: "250",
-    subtext: "200 good, 50 broken",
-    subtextColor: "text-muted-foreground",
-  },
-  {
-    icon: AlertTriangle,
-    iconColor: "text-destructive",
-    iconBg: "bg-destructive/10",
-    label: "Shortage Alert",
-    value: "450",
-    subtext: "empties in circulation",
-    subtextColor: "text-destructive",
-  },
-]
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts"
+import api from "@/lib/api"
+import type { ApiShopBill } from "@/lib/types"
 
-export function StatsCards() {
+export function SalesTrendChart() {
+  const [chartData, setChartData] = useState<{ day: string; sales: number }[]>([])
+
+  useEffect(() => {
+    api.get<ApiShopBill[]>("/bills").then((res) => {
+      // Aggregate bills by day (last 7 days)
+      const dayMap: Record<string, number> = {}
+      const today = new Date()
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today)
+        d.setDate(d.getDate() - i)
+        const key = d.toLocaleDateString("en-IN", { weekday: "short" })
+        dayMap[key] = 0
+      }
+      res.data.forEach((bill) => {
+        const d = new Date(bill.billDate)
+        const diff = Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+        if (diff <= 6) {
+          const key = d.toLocaleDateString("en-IN", { weekday: "short" })
+          dayMap[key] = (dayMap[key] ?? 0) + (bill.grandTotal ?? 0)
+        }
+      })
+      setChartData(Object.entries(dayMap).map(([day, sales]) => ({ day, sales })))
+    }).catch(() => { })
+  }, [])
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {stats.map((stat) => {
-        const Icon = stat.icon
-        return (
-          <div
-            key={stat.label}
-            className="backdrop-blur-md bg-white/80 rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 border border-border"
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div className={`p-2.5 rounded-lg ${stat.iconBg}`}>
-                <Icon className={`h-5 w-5 ${stat.iconColor}`} />
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground">{stat.label}</p>
-            <p className="text-3xl font-bold text-foreground mt-1">{stat.value}</p>
-            <p className={`text-xs mt-1 ${stat.subtextColor}`}>{stat.subtext}</p>
-          </div>
-        )
-      })}
-    </div>
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base font-medium">Sales Trend (Last 7 Days)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[250px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis
+                dataKey="day"
+                tick={{ fontSize: 12 }}
+                stroke="hsl(var(--muted-foreground))"
+              />
+              <YAxis
+                tick={{ fontSize: 12 }}
+                stroke="hsl(var(--muted-foreground))"
+                tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                }}
+                formatter={(value: number) => [`₹${value.toLocaleString()}`, "Sales"]}
+                labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+              />
+              <Legend
+                wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
+                formatter={(value) => <span style={{ color: "hsl(var(--foreground))" }}>{value}</span>}
+              />
+              <Line
+                type="monotone"
+                dataKey="sales"
+                stroke="#1a1a1a"
+                strokeWidth={2.5}
+                dot={{ r: 4, fill: "#1a1a1a" }}
+                activeDot={{ r: 6 }}
+                name="Sales"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
+
+// Alias so the dashboard page can import `StatsCards`
+export { SalesTrendChart as StatsCards }
