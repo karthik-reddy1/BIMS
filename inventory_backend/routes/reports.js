@@ -72,6 +72,75 @@ router.get('/sales', async (req, res) => {
     }
 });
 
+// GET /api/reports/item-sales - Daily item-wise sales & business summary
+router.get('/item-sales', async (req, res) => {
+    try {
+        const filter = dateFilter(req.query.from, req.query.to, 'billDate');
+        const routeFilter = dateFilter(req.query.from, req.query.to, 'routeDate');
+
+        // Fetch Shop Bills and Route Bills for the period
+        const bills = await ShopBill.find(filter);
+        const routeBills = await RouteBill.find(routeFilter);
+
+        // 1. Calculate Business Summary
+        const totalSales = bills.reduce((sum, b) => sum + (b.grandTotal || 0), 0);
+        const totalExpenses = routeBills.reduce((sum, rb) => sum + (rb.routeExpenses || 0), 0);
+        const profit = totalSales - totalExpenses;
+
+        const businessSummary = {
+            totalSales,
+            totalExpenses,
+            profit
+        };
+
+        // 2. Aggregate Items Sold
+        const itemMap = {};
+
+        bills.forEach(bill => {
+            bill.items.forEach(item => {
+                if (!itemMap[item.productId]) {
+                    itemMap[item.productId] = {
+                        productId: item.productId,
+                        productName: item.productName || 'Unknown',
+                        totalBottlesSold: 0,
+                        totalValue: 0
+                    };
+                }
+                itemMap[item.productId].totalBottlesSold += (item.quantity || 0);
+                itemMap[item.productId].totalValue += (item.itemTotal || 0);
+            });
+        });
+
+        // Enrich with Product details for accurate case conversion
+        const products = await Product.find({}, 'productId productName bottlesPerCase packType size');
+        const productDict = {};
+        products.forEach(p => productDict[p.productId] = p);
+
+        const itemSales = Object.values(itemMap).map(item => {
+            const prod = productDict[item.productId];
+            const bpc = prod ? prod.bottlesPerCase : 24;
+            const name = prod ? `${prod.productName} ${prod.size} ${prod.packType}` : item.productName;
+
+            const casesSold = Math.floor(item.totalBottlesSold / bpc);
+            const looseSold = item.totalBottlesSold % bpc;
+
+            return {
+                productName: name,
+                casesSold,
+                looseBottlesSold: looseSold,
+                totalValue: item.totalValue
+            };
+        });
+
+        // Sort alphabetically by product name
+        itemSales.sort((a, b) => a.productName.localeCompare(b.productName));
+
+        sendSuccess(res, { businessSummary, itemSales });
+    } catch (err) {
+        sendError(res, err.message);
+    }
+});
+
 // GET /api/reports/profit-loss - Revenue vs Expenses
 router.get('/profit-loss', async (req, res) => {
     try {

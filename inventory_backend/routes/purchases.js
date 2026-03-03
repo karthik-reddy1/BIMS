@@ -31,12 +31,20 @@ router.post('/', async (req, res) => {
             });
         }
 
-        // Enrich empties returned with product names
+        // Enrich empties returned with product names and compute totals
         const enrichedEmpties = [];
         for (const e of emptiesReturned) {
             const product = await Product.findOne({ productId: e.productId });
             if (product) {
-                enrichedEmpties.push({ productId: e.productId, productName: product.productName, goodBottles: e.goodBottles || 0, brokenBottles: e.brokenBottles || 0 });
+                const good = e.goodBottles || 0;
+                const broken = e.brokenBottles || 0;
+                enrichedEmpties.push({
+                    productId: e.productId,
+                    productName: product.productName,
+                    goodBottles: good,
+                    brokenBottles: broken,
+                    totalReturned: good + broken
+                });
             }
         }
 

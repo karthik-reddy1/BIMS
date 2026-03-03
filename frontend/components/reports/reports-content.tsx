@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import api from "@/lib/api"
+import { ItemSalesReport } from "./item-sales-report"
 
 // Helper type for mapping UI
 type PLReport = {
@@ -110,12 +111,22 @@ export function ReportsContent() {
               <SelectItem value="90">Last 90 Days</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" className="border-border">
+          <Button
+            variant="outline"
+            className="border-border"
+            onClick={() => {
+              if (typeof window !== "undefined" && (window as any).triggerExcelExport) {
+                (window as any).triggerExcelExport()
+              }
+            }}
+          >
             <Download className="h-4 w-4 mr-2" />
-            Export PDF
+            Export .xlsx
           </Button>
         </div>
       </div>
+
+      <ItemSalesReport days={days} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {loading ? (
