@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const RouteBill = require('../models/RouteBill');
 const ShopBill = require('../models/ShopBill');
-const EmptiesReturn = require('../models/EmptiesReturn');
 const Shop = require('../models/Shop');
 const Product = require('../models/Product');
 const { generateId, updateReturnableBalance, sendSuccess, sendError } = require('../utils/helpers');
@@ -98,18 +97,7 @@ router.put('/:routeBillId/complete', async (req, res) => {
             }
             await shop.save();
 
-            // Create an EmptiesReturn document for each shop
-            retCounter++;
-            const retId = `RET-${String(retCounter).padStart(3, '0')}`;
-            await EmptiesReturn.create({
-                returnId: retId,
-                shopId: shop.shopId,
-                shopName: shop.shopName,
-                routeId: routeBill.routeId,
-                returnDate: new Date(),
-                routeBillId: routeBill.routeBillId,
-                items
-            });
+            // Create an EmptiesReturn document for each shop (REMOVED - Redundant as we have shopCollections in RouteBill)
         }
 
         // Update route bill
