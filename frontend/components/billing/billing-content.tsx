@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { CreateBillDialog } from "@/components/billing/create-bill-dialog"
-import { BillDetailModal } from "@/components/billing/bill-detail-modal"
+import { BillDetailModal, printBill } from "@/components/billing/bill-detail-modal"
 import api from "@/lib/api"
 import type { ApiShopBill } from "@/lib/types"
 
@@ -129,12 +129,12 @@ export function BillingContent() {
                       <Eye className="h-4 w-4" />
                       <span className="sr-only">View</span>
                     </Button>
-                    {/* Print — opens detail then triggers print */}
+                    {/* Print — triggers print directly */}
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => setViewBill(bill)}
+                      onClick={() => printBill(bill)}
                     >
                       <Printer className="h-4 w-4" />
                       <span className="sr-only">Print</span>

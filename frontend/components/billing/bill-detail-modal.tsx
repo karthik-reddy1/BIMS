@@ -34,37 +34,24 @@ function PaymentBadge({ mode }: { mode: string }) {
     }
 }
 
-export function BillDetailModal({
-    bill,
-    open,
-    onOpenChange,
-}: {
-    bill: ApiShopBill | null
-    open: boolean
-    onOpenChange: (open: boolean) => void
-}) {
-    const printRef = useRef<HTMLDivElement>(null)
-
-    if (!bill) return null
-
+export function printBill(bill: ApiShopBill) {
     const balance = bill.grandTotal - bill.paymentReceived
 
-    const handlePrint = () => {
-        const win = window.open("", "_blank", "width=400,height=600")
-        if (!win) return
+    const win = window.open("", "_blank", "width=400,height=600")
+    if (!win) return
 
-        // Build the item rows dynamically
-        const itemsList = bill.items.map(item => `
-            <tr class="item-row">
-                <td class="name">
-                    ${item.productName} ${item.size}<br/>
-                    <small>${item.quantity} x ₹${item.mrp}</small>
-                </td>
-                <td class="right">₹${item.mrp * item.quantity}</td>
-            </tr>
-        `).join('')
+    // Build the item rows dynamically
+    const itemsList = bill.items.map(item => `
+        <tr class="item-row">
+            <td class="name">
+                ${item.productName} ${item.size}<br/>
+                <small>${item.quantity} x ₹${item.mrp}</small>
+            </td>
+            <td class="right">₹${item.mrp * item.quantity}</td>
+        </tr>
+    `).join('')
 
-        win.document.write(`
+    win.document.write(`
       <html>
         <head>
           <title>Receipt - ${bill.billId}</title>
@@ -72,34 +59,34 @@ export function BillDetailModal({
             @page { margin: 0; size: 80mm auto; }
             body { 
               font-family: 'Courier New', Courier, monospace; 
-              font-size: 12px; 
+              font-size: 13px; 
               color: #000; 
               margin: 0; 
-              padding: 10px; 
+              padding: 20px; 
               width: 80mm;
-              line-height: 1.4;
+              line-height: 1.6;
             }
             .center { text-align: center; }
             .right { text-align: right; }
             .strong { font-weight: bold; }
-            h1 { font-size: 18px; margin: 0 0 5px 0; }
-            h2 { font-size: 14px; margin: 0 0 10px 0; }
-            .divider { border-bottom: 1px dashed #000; margin: 10px 0; }
-            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-            th { text-align: left; font-weight: normal; border-bottom: 1px dashed #000; padding-bottom: 5px; }
+            h1 { font-size: 20px; margin: 0 0 10px 0; }
+            h2 { font-size: 16px; margin: 0 0 15px 0; }
+            .divider { border-bottom: 1px dashed #000; margin: 15px 0; }
+            table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            th { text-align: left; font-weight: normal; border-bottom: 1px dashed #000; padding-bottom: 8px; font-size: 14px;}
             th.right { text-align: right; }
-            td { vertical-align: top; padding: 5px 0; border-bottom: 1px dotted #ccc; }
-            .name { padding-right: 10px; }
-            .name small { color: #333; font-size: 10px; }
-            .totals { width: 100%; margin-top: 10px; }
-            .totals td { border: none; padding: 3px 0; }
-            .grand-total { font-size: 16px; font-weight: bold; border-top: 1px dashed #000 !important; border-bottom: 1px dashed #000 !important; padding: 8px 0 !important; }
-            .footer { text-align: center; margin-top: 20px; font-size: 10px; }
+            td { vertical-align: top; padding: 10px 0; border-bottom: 1px dotted #ccc; }
+            .name { padding-right: 15px; }
+            .name small { color: #333; font-size: 11px; }
+            .totals { width: 100%; margin-top: 20px; }
+            .totals td { border: none; padding: 6px 0; font-size: 14px;}
+            .grand-total { font-size: 18px; font-weight: bold; border-top: 1px dashed #000 !important; border-bottom: 1px dashed #000 !important; padding: 12px 0 !important; }
+            .footer { text-align: center; margin-top: 30px; font-size: 11px; }
           </style>
         </head>
         <body>
           <div class="center">
-            <h1>Beverage Distributor</h1>
+            <h1>VS enterprises</h1>
             <p>Receipt: ${bill.billId}</p>
           </div>
           <div class="divider"></div>
@@ -107,8 +94,8 @@ export function BillDetailModal({
             <span class="strong">Shop:</span> ${bill.shopName}<br/>
             ${bill.routeName ? `<span class="strong">Route:</span> ${bill.routeName}<br/>` : ''}
             <span class="strong">Date:</span> ${new Date(bill.billDate).toLocaleString("en-IN", {
-            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-        })}<br/>
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    })}<br/>
             <span class="strong">Payment:</span> ${bill.paymentMode.toUpperCase()}
           </p>
           <div class="divider"></div>
@@ -134,14 +121,6 @@ export function BillDetailModal({
               <td class="grand-total">Grand Total:</td>
               <td class="grand-total right">₹${bill.grandTotal}</td>
             </tr>
-            <tr>
-              <td>Paid Amount:</td>
-              <td class="right">₹${bill.paymentReceived}</td>
-            </tr>
-            <tr>
-              <td class="strong">Balance Due:</td>
-              <td class="strong right">₹${balance > 0 ? balance : 0}</td>
-            </tr>
           </table>
 
           <div class="footer">
@@ -151,10 +130,27 @@ export function BillDetailModal({
         </body>
       </html>
     `)
-        win.document.close()
-        win.focus()
-        setTimeout(() => { win.print(); win.close() }, 300)
-    }
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print() }, 300)
+}
+
+export function BillDetailModal({
+    bill,
+    open,
+    onOpenChange,
+}: {
+    bill: ApiShopBill | null
+    open: boolean
+    onOpenChange: (open: boolean) => void
+}) {
+    const printRef = useRef<HTMLDivElement>(null)
+
+    if (!bill) return null
+
+    const balance = bill.grandTotal - bill.paymentReceived
+
+    const handlePrint = () => printBill(bill)
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
