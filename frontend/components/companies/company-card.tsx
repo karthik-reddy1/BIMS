@@ -14,8 +14,9 @@ export function CompanyCard({
   onAddPurchase: () => void
 }) {
   return (
-    <Link href={`/companies/${company.id}`} className="flex-1">
-      <div className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-border flex flex-col">
+    
+    <div className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-border flex flex-col">
+      <Link href={`/companies/${company.id}`} className="flex-1">
         {/* Header */}
         <div className="flex items-start justify-between p-5 pb-0">
           <h3 className="font-semibold text-lg text-foreground leading-tight pr-2">
@@ -82,7 +83,7 @@ export function CompanyCard({
             </div>
           )}
         </div>
-
+    </Link>
         {/* Footer */}
         <div className="flex items-center gap-2 px-5 pb-5 pt-1">
           <Button
@@ -106,6 +107,6 @@ export function CompanyCard({
           )}
         </div>
       </div>
-    </Link>
+    
   )
 }

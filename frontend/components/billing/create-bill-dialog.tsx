@@ -270,7 +270,7 @@ export function CreateBillDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o) }}>
-      <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] flex flex-col backdrop-blur-xl bg-white/95 rounded-2xl p-0 border border-border">
+      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] flex flex-col backdrop-blur-xl bg-white/95 rounded-2xl p-0 border border-border overflow-hidden">
         <DialogHeader className="p-6 pb-0 flex-shrink-0">
           <DialogTitle className="text-2xl font-bold text-foreground">Create Shop Bill</DialogTitle>
         </DialogHeader>

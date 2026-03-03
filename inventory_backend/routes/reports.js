@@ -3,7 +3,6 @@ const router = express.Router();
 const Product = require('../models/Product');
 const ShopBill = require('../models/ShopBill');
 const CompanyPurchase = require('../models/CompanyPurchase');
-const EmptiesReturn = require('../models/EmptiesReturn');
 const RouteBill = require('../models/RouteBill');
 const Company = require('../models/company');
 const Shop = require('../models/Shop');
@@ -147,17 +146,14 @@ router.get('/profit-loss', async (req, res) => {
         const billFilter = dateFilter(req.query.from, req.query.to, 'billDate');
         const purchaseFilter = dateFilter(req.query.from, req.query.to, 'purchaseDate');
         const routeFilter = dateFilter(req.query.from, req.query.to, 'routeDate');
-        const retFilter = dateFilter(req.query.from, req.query.to, 'returnDate');
-
-        const [bills, purchases, routeBills, returns] = await Promise.all([
+        const [bills, purchases, routeBills] = await Promise.all([
             ShopBill.find(billFilter),
             CompanyPurchase.find(purchaseFilter),
-            RouteBill.find({ ...routeFilter, status: 'Completed' }),
-            EmptiesReturn.find(retFilter)
+            RouteBill.find({ ...routeFilter, status: 'Completed' })
         ]);
 
         const totalSales = bills.reduce((s, b) => s + b.grandTotal, 0);
-        const brokenCollected = returns.reduce((s, r) => s + r.totalMoneyCollected, 0);
+        const brokenCollected = routeBills.reduce((s, rb) => s + (rb.totalMoneyCollectedForBroken || 0), 0);
         const totalRevenue = totalSales + brokenCollected;
 
         const purchaseCost = purchases.reduce((s, p) => s + p.productTotal, 0);
