@@ -12,6 +12,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { AddRouteDialog } from "./add-route-dialog"
 import api from "@/lib/api"
 import type { ApiRoute, ApiShopBill } from "@/lib/types"
 
@@ -26,9 +27,11 @@ export function RoutesContent() {
   const [loadingBills, setLoadingBills] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [cashReceived, setCashReceived] = useState("")
+  const [shopCash, setShopCash] = useState<Record<string, string>>({})
   const [routeExpenses, setRouteExpenses] = useState("")
   const [empties, setEmpties] = useState<EmptiesState>({})
   const [submitting, setSubmitting] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
 
   const fetchRoutes = useCallback(async () => {
     try {
@@ -46,15 +49,16 @@ export function RoutesContent() {
   const loadRouteBills = async (routeId: string) => {
     try {
       setLoadingBills(true)
-      const today = new Date()
-      const todayStr = today.toISOString().split("T")[0]
-      const res = await api.get<ApiShopBill[]>(`/bills?routeId=${routeId}`)
-      const todays = res.data.filter((b) => b.billDate.startsWith(todayStr))
+      // Extract the filtered active bills directly from the loaded route
+      const route = routes.find((r) => r.routeId === routeId)
+      const todays = route?.activeBills || []
       setRouteBills(todays)
 
-      // Initialize empties state for returnable items
+      // Initialize empties and shopCash state
       const initEmpties: EmptiesState = {}
+      const initShopCash: Record<string, string> = {}
       for (const bill of todays) {
+        initShopCash[bill.billId] = ""
         initEmpties[bill.billId] = {}
         for (const item of bill.items) {
           if (item.isReturnable) {
@@ -63,6 +67,7 @@ export function RoutesContent() {
         }
       }
       setEmpties(initEmpties)
+      setShopCash(initShopCash)
     } catch {
       setRouteBills([])
     } finally {
@@ -82,37 +87,62 @@ export function RoutesContent() {
 
   const activeRoute = routes.find((r) => r.routeId === activeRouteId)
   const totalAmount = routeBills.reduce((s, b) => s + (b.grandTotal ?? 0), 0)
-  const cash = parseFloat(cashReceived) || 0
+  const calculatedCashReceived = routeBills.reduce((sum, bill) => sum + (parseFloat(shopCash[bill.billId]) || 0), 0)
+  const cash = calculatedCashReceived || 0
   const expenses = parseFloat(routeExpenses) || 0
   const diff = cash - expenses - totalAmount
 
   const handleComplete = async () => {
     try {
       setSubmitting(true)
-      // For each bill that has returnable items with quantities entered, save empties return
+
+      // 1. Group all today's shop bills under a new Route Bill
+      const rbRes = await api.post("/route-bills", {
+        routeId: activeRouteId,
+        routeName: activeRoute?.routeName,
+        routeDate: new Date().toISOString(),
+        shopBillIds: routeBills.map(b => b.billId),
+        stockLoaded: [] // we aren't tracking vehicle stock in this UI yet
+      })
+
+      const routeBillId = rbRes.data.routeBillId
+
+      // 2. Prepare the shop collections array for completion
+      const shopCollections = []
       for (const bill of routeBills) {
+        const cashPaid = parseFloat(shopCash[bill.billId]) || 0
         const billEmpties = empties[bill.billId]
-        if (!billEmpties) continue
+        const items: { productId: string; goodBottles: number; brokenBottles: number }[] = []
+        if (billEmpties) {
+          Object.entries(billEmpties)
+            .filter(([, vals]) => vals.good > 0 || vals.broken > 0)
+            .forEach(([productId, vals]) => {
+              items.push({
+                productId,
+                goodBottles: vals.good,
+                brokenBottles: vals.broken,
+              })
+            })
+        }
 
-        const items = Object.entries(billEmpties)
-          .filter(([, vals]) => vals.good > 0 || vals.broken > 0)
-          .map(([productId, vals]) => ({
-            productId,
-            goodBottles: vals.good,
-            brokenBottles: vals.broken,
-          }))
-
-        if (items.length === 0) continue
-
-        await api.post("/empties-returns", {
-          shopId: bill.shopId,
-          routeId: activeRouteId,
-          returnDate: new Date().toISOString(),
-          items,
-        })
+        if (cashPaid > 0 || items.length > 0) {
+          shopCollections.push({
+            shopId: bill.shopId,
+            cashCollected: cashPaid,
+            items
+          })
+        }
       }
-    } catch {
-      // Non-blocking — complete the route UI even if empties save fails
+
+      // 3. Complete the route bill with cash, expenses, and collections
+      await api.put(`/route-bills/${routeBillId}/complete`, {
+        cashReceived: calculatedCashReceived,
+        routeExpenses: parseFloat(routeExpenses) || 0,
+        shopCollections
+      })
+
+    } catch (err) {
+      console.error("Failed to complete route", err)
     } finally {
       setSubmitting(false)
       setCompleting(false)
@@ -122,6 +152,14 @@ export function RoutesContent() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-foreground">Routes Management</h1>
+        <Button onClick={() => setAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Truck className="h-4 w-4 mr-2" />
+          Add Route
+        </Button>
+      </div>
+
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
@@ -129,44 +167,91 @@ export function RoutesContent() {
           ))}
         </div>
       ) : routes.length === 0 ? (
-        <p className="text-center py-16 text-muted-foreground">No routes found. Add routes from the backend.</p>
+        <p className="text-center py-16 text-muted-foreground">No routes found. Create a new route to get started.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {routes.map((route) => (
-            <div
-              key={route.routeId}
-              className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border border-border p-5"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Truck className="h-5 w-5 text-primary" />
+        <div className="flex flex-col gap-8">
+          {/* Section 1: Active Routes (Has Bills Today) */}
+          <div>
+            <h2 className="text-xl font-bold text-foreground mb-4">Routes with Bills Today</h2>
+            {routes.filter((r) => r.activeBills && r.activeBills.length > 0).length === 0 ? (
+              <p className="text-muted-foreground bg-white/50 p-4 rounded-xl border border-dashed border-border text-center">
+                No active routes found. Assign shops to a route first.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {routes.filter((r) => r.activeBills && r.activeBills.length > 0).map((route) => (
+                  <div
+                    key={route.routeId}
+                    className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 border border-primary/20 p-5"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                          <Truck className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-foreground">{route.routeName}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {route.activeBills?.length ?? 0} bills today
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    {route.description && (
+                      <p className="text-sm text-muted-foreground mb-4">{route.description}</p>
+                    )}
+                    <Button
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={() => {
+                        setActiveRouteId(route.routeId)
+                        setCompleting(false)
+                        setCashReceived("")
+                        setRouteExpenses("")
+                        loadRouteBills(route.routeId)
+                      }}
+                    >
+                      {"Today's Bill"}
+                    </Button>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{route.routeName}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {route.shops?.length ?? 0} shops assigned
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Inactive Routes */}
+          <div>
+            <h2 className="text-xl font-bold text-foreground mb-4">Other Routes</h2>
+            {routes.filter((r) => !r.activeBills || r.activeBills.length === 0).length === 0 ? (
+              <p className="text-muted-foreground">All routes have bills today.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {routes.filter((r) => !r.activeBills || r.activeBills.length === 0).map((route) => (
+                  <div
+                    key={route.routeId}
+                    className="backdrop-blur-md bg-muted/40 rounded-xl border border-border p-5 opacity-80"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-lg bg-muted-foreground/10">
+                          <Truck className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-foreground">{route.routeName}</h3>
+                          <p className="text-sm text-muted-foreground">0 bills today</p>
+                        </div>
+                      </div>
+                    </div>
+                    {route.description && (
+                      <p className="text-sm text-muted-foreground mb-4">{route.description}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground italic">
+                      Generate bills for shops on this route to activate it.
                     </p>
                   </div>
-                </div>
+                ))}
               </div>
-              {route.description && (
-                <p className="text-sm text-muted-foreground mb-4">{route.description}</p>
-              )}
-              <Button
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                onClick={() => {
-                  setActiveRouteId(route.routeId)
-                  setCompleting(false)
-                  setCashReceived("")
-                  setRouteExpenses("")
-                  loadRouteBills(route.routeId)
-                }}
-              >
-                {"Today's Bill"}
-              </Button>
-            </div>
-          ))}
+            )}
+          </div>
         </div>
       )}
 
@@ -231,16 +316,9 @@ export function RoutesContent() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label className="text-muted-foreground text-sm">Received</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
-                      <Input
-                        type="number"
-                        value={cashReceived}
-                        onChange={(e) => setCashReceived(e.target.value)}
-                        className="pl-7 bg-white/80 border-border"
-                        placeholder="0"
-                      />
+                    <Label className="text-muted-foreground text-sm">Received (Auto-sum)</Label>
+                    <div className="bg-muted/50 rounded-lg p-3 text-lg font-semibold text-foreground border border-border">
+                      ₹{calculatedCashReceived.toLocaleString("en-IN")}
                     </div>
                   </div>
                   <div className="flex flex-col gap-2">
@@ -254,13 +332,12 @@ export function RoutesContent() {
                 </div>
               </div>
 
-              {/* Empties Collected */}
+              {/* Shop Settlements */}
               <div>
-                <h3 className="font-semibold text-foreground mb-4">Empties Collected from Shops</h3>
+                <h3 className="font-semibold text-foreground mb-4">Shop Settlements (Cash & Empties)</h3>
                 <Accordion type="single" collapsible className="flex flex-col gap-2">
                   {routeBills.map((bill) => {
                     const returnableItems = bill.items.filter((i) => i.isReturnable)
-                    if (returnableItems.length === 0) return null
                     return (
                       <AccordionItem
                         key={bill.billId}
@@ -268,49 +345,73 @@ export function RoutesContent() {
                         className="bg-muted/50 rounded-lg border border-border px-4"
                       >
                         <AccordionTrigger className="text-sm font-medium text-foreground hover:no-underline py-3">
-                          {bill.shopName}
+                          <div className="flex justify-between items-center w-full pr-4">
+                            <span>{bill.shopName}</span>
+                            <span className="text-muted-foreground text-sm font-normal">Bill: ₹{bill.grandTotal?.toLocaleString("en-IN")}</span>
+                          </div>
                         </AccordionTrigger>
-                        <AccordionContent className="pb-4">
-                          {returnableItems.map((item) => {
-                            const e = empties[bill.billId]?.[item.productId] ?? { good: 0, broken: 0 }
-                            return (
-                              <div key={item.productId} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2">
-                                <span className="text-sm font-medium text-foreground min-w-[120px]">{item.productName}:</span>
-                                <div className="flex items-center gap-4">
-                                  <div className="flex items-center gap-1.5">
-                                    <Label className="text-xs text-muted-foreground">Good</Label>
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      max={item.quantity}
-                                      value={e.good}
-                                      onChange={(ev) => updateEmpties(bill.billId, item.productId, "good", parseInt(ev.target.value) || 0)}
-                                      className="w-16 h-8 text-sm bg-white/80 border-border"
-                                    />
+                        <AccordionContent className="pb-4 flex flex-col gap-6">
+                          {/* Cash Collected Input */}
+                          <div className="flex flex-col gap-2">
+                            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cash Collected</Label>
+                            <div className="relative w-full sm:w-64">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+                              <Input
+                                type="number"
+                                value={shopCash[bill.billId] ?? ""}
+                                onChange={(e) => setShopCash(prev => ({ ...prev, [bill.billId]: e.target.value }))}
+                                className="pl-7 bg-white/80 border-border"
+                                placeholder="0"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Empties Returned Inputs */}
+                          {returnableItems.length > 0 && (
+                            <div className="flex flex-col gap-3">
+                              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Empties Returned</Label>
+                              {returnableItems.map((item) => {
+                                const e = empties[bill.billId]?.[item.productId] ?? { good: 0, broken: 0 }
+                                return (
+                                  <div key={item.productId} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2">
+                                    <span className="text-sm font-medium text-foreground min-w-[120px]">{item.productName}:</span>
+                                    <div className="flex items-center gap-4">
+                                      <div className="flex items-center gap-1.5">
+                                        <Label className="text-xs text-muted-foreground">Good</Label>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={item.quantity}
+                                          value={e.good}
+                                          onChange={(ev) => updateEmpties(bill.billId, item.productId, "good", parseInt(ev.target.value) || 0)}
+                                          className="w-16 h-8 text-sm bg-white/80 border-border"
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <Label className="text-xs text-muted-foreground">Broken</Label>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          max={item.quantity}
+                                          value={e.broken}
+                                          onChange={(ev) => updateEmpties(bill.billId, item.productId, "broken", parseInt(ev.target.value) || 0)}
+                                          className="w-16 h-8 text-sm bg-white/80 border-border"
+                                        />
+                                      </div>
+                                      <span className="text-xs text-muted-foreground">of {item.quantity} sold</span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <Label className="text-xs text-muted-foreground">Broken</Label>
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      max={item.quantity}
-                                      value={e.broken}
-                                      onChange={(ev) => updateEmpties(bill.billId, item.productId, "broken", parseInt(ev.target.value) || 0)}
-                                      className="w-16 h-8 text-sm bg-white/80 border-border"
-                                    />
-                                  </div>
-                                  <span className="text-xs text-muted-foreground">of {item.quantity} sold</span>
-                                </div>
-                              </div>
-                            )
-                          })}
+                                )
+                              })}
+                            </div>
+                          )}
                         </AccordionContent>
                       </AccordionItem>
                     )
                   })}
                 </Accordion>
                 {routeBills.every((b) => b.items.every((i) => !i.isReturnable)) && (
-                  <p className="text-sm text-muted-foreground">No returnable items on today's bills.</p>
+                  <p className="text-sm text-muted-foreground mt-2">No returnable items on today's bills.</p>
                 )}
               </div>
 
@@ -349,6 +450,12 @@ export function RoutesContent() {
           )}
         </div>
       )}
+
+      <AddRouteDialog
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onSaved={fetchRoutes}
+      />
     </div>
   )
 }

@@ -50,7 +50,8 @@ router.get('/', async (req, res) => {
         if (req.query.packType) filter.packType = req.query.packType.toUpperCase();
         if (req.query.brand) filter.brand = { $regex: req.query.brand, $options: 'i' };
         if (req.query.isReturnable !== undefined) filter.isReturnable = req.query.isReturnable === 'true';
-        const products = await Product.find(filter).sort({ productName: 1 });
+        if (req.query.group) filter.productGroup = { $regex: `^${req.query.group}$`, $options: 'i' };
+        const products = await Product.find(filter).sort({ productName: 1, packType: 1, size: 1 });
         sendSuccess(res, products);
     } catch (err) {
         sendError(res, err.message);
@@ -82,15 +83,47 @@ router.get('/:productId', async (req, res) => {
 // PUT /api/products/:productId
 router.put('/:productId', async (req, res) => {
     try {
-        // Prevent changing productId or packType
-        delete req.body.productId;
-        delete req.body.packType;
-        const product = await Product.findOneAndUpdate(
-            { productId: req.params.productId },
-            req.body,
-            { new: true, runValidators: true }
-        );
+        const product = await Product.findOne({ productId: req.params.productId });
         if (!product) return sendError(res, 'Product not found', 404);
+
+        // Prevent overriding immutable fields
+        const { productId: _, packType: __, ...body } = req.body;
+        void _;
+        void __;
+
+        // Apply allowed top-level fields
+        const allowedFields = ['productGroup', 'brand', 'productName', 'mrp', 'casePrice', 'bottlesPerCase', 'perBottlePrice'];
+        for (const field of allowedFields) {
+            if (body[field] !== undefined) product[field] = body[field];
+        }
+
+        // Apply filledStock and immediately recompute totalBottles
+        if (body.filledStock) {
+            const newCases = body.filledStock.cases !== undefined ? Number(body.filledStock.cases) : product.filledStock.cases;
+            const newLoose = body.filledStock.looseBottles !== undefined ? Number(body.filledStock.looseBottles) : product.filledStock.looseBottles;
+            const bpc = product.bottlesPerCase;
+            product.filledStock.cases = newCases;
+            product.filledStock.looseBottles = newLoose;
+            product.filledStock.totalBottles = (newCases * bpc) + newLoose; // explicit calculation — no middleware dependency
+            product.markModified('filledStock');
+        }
+
+        // Apply emptyStock and immediately recompute total (only for returnable)
+        if (body.emptyStock && product.isReturnable) {
+            const newGood = body.emptyStock.good !== undefined ? Number(body.emptyStock.good) : product.emptyStock.good;
+            const newBroken = body.emptyStock.broken !== undefined ? Number(body.emptyStock.broken) : product.emptyStock.broken;
+            product.emptyStock.good = newGood;
+            product.emptyStock.broken = newBroken;
+            product.emptyStock.total = newGood + newBroken; // explicit calculation — no middleware dependency
+            product.markModified('emptyStock');
+        }
+
+        // Recompute perBottlePrice if pricing changed
+        if (product.casePrice && product.bottlesPerCase) {
+            product.perBottlePrice = product.casePrice / product.bottlesPerCase;
+        }
+
+        await product.save();
         sendSuccess(res, product, 'Product updated');
     } catch (err) {
         sendError(res, err.message);

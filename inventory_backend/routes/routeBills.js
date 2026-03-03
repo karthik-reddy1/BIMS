@@ -58,20 +58,24 @@ router.post('/', async (req, res) => {
 // PUT /api/route-bills/:routeBillId/complete - Complete route bill after driver returns
 router.put('/:routeBillId/complete', async (req, res) => {
     try {
-        const { cashReceived, emptiesCollected, routeExpenses } = req.body;
+        const { cashReceived, shopCollections, routeExpenses } = req.body;
         const routeBill = await RouteBill.findOne({ routeBillId: req.params.routeBillId.toUpperCase() });
         if (!routeBill) return sendError(res, 'Route bill not found', 404);
         if (routeBill.status === 'Completed') return sendError(res, 'Route bill already completed', 400);
 
-        // ===== Process Empties Collected per shop =====
+        // ===== Process Collections per shop =====
         const retCount = await EmptiesReturn.countDocuments();
         let retCounter = retCount;
-        for (const shopEmpties of (emptiesCollected || [])) {
-            const shop = await Shop.findOne({ shopId: shopEmpties.shopId.toUpperCase() });
+        for (const shopCollection of (shopCollections || [])) {
+            const shop = await Shop.findOne({ shopId: shopCollection.shopId.toUpperCase() });
             if (!shop) continue;
 
+            // Reduce shop's outstanding balance by cash paid
+            const cashPaid = parseFloat(shopCollection.cashCollected) || 0;
+            shop.outstandingAmount = Math.max(0, shop.outstandingAmount - cashPaid);
+
             const items = [];
-            for (const item of shopEmpties.items) {
+            for (const item of (shopCollection.items || [])) {
                 const product = await Product.findOne({ productId: item.productId });
                 if (!product || !product.isReturnable) continue;
 
@@ -110,7 +114,7 @@ router.put('/:routeBillId/complete', async (req, res) => {
 
         // Update route bill
         routeBill.cashReceived = cashReceived || 0;
-        routeBill.emptiesCollected = emptiesCollected || [];
+        routeBill.shopCollections = shopCollections || [];
         routeBill.routeExpenses = routeExpenses || 0;
         routeBill.status = 'Completed';
         routeBill.completedAt = new Date();

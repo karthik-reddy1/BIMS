@@ -5,7 +5,7 @@ const ShopBill = require('../models/ShopBill');
 const CompanyPurchase = require('../models/CompanyPurchase');
 const EmptiesReturn = require('../models/EmptiesReturn');
 const RouteBill = require('../models/RouteBill');
-const Company = require('../models/Company');
+const Company = require('../models/company');
 const Shop = require('../models/Shop');
 const { sendSuccess, sendError } = require('../utils/helpers');
 

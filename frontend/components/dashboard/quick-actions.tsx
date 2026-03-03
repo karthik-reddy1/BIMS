@@ -3,7 +3,7 @@ import { Receipt, ShoppingCart, Truck, BarChart } from "lucide-react"
 
 const actions = [
   { icon: Receipt, label: "New Bill", href: "/billing", color: "text-primary", bg: "bg-primary/10" },
-  { icon: ShoppingCart, label: "Add Purchase", href: "/products", color: "text-success", bg: "bg-success/10" },
+  { icon: ShoppingCart, label: "Add Purchase", href: "/companies", color: "text-success", bg: "bg-success/10" },
   { icon: Truck, label: "Route Bills", href: "/routes", color: "text-chart-5", bg: "bg-chart-5/10" },
   { icon: BarChart, label: "Reports", href: "/reports", color: "text-warning", bg: "bg-warning/10" },
 ]

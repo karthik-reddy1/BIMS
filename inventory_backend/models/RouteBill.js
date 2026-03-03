@@ -16,9 +16,10 @@ const EmptiesItemSchema = new mongoose.Schema({
     moneyCollected: { type: Number, default: 0 }  // auto: broken × 3
 }, { _id: false });
 
-const ShopEmptiesSchema = new mongoose.Schema({
+const ShopCollectionSchema = new mongoose.Schema({
     shopId: { type: String, required: true },
     shopName: String,
+    cashCollected: { type: Number, default: 0 },
     items: [EmptiesItemSchema]
 }, { _id: false });
 
@@ -43,8 +44,8 @@ const RouteBillSchema = new mongoose.Schema({
     cashReceived: { type: Number, default: 0 },
     cashShortage: { type: Number, default: 0 },        // auto: totalAmount - cashReceived
 
-    // Empties collected shop-wise (filled when completing route bill)
-    emptiesCollected: [ShopEmptiesSchema],
+    // Cash and Empties collected shop-wise (filled when completing route bill)
+    shopCollections: [ShopCollectionSchema],
     totalMoneyCollectedForBroken: { type: Number, default: 0 },
 
     // Single field for expenses
@@ -68,8 +69,8 @@ RouteBillSchema.pre('save', function () {
 
     // Calculate total money collected for broken bottles
     let totalMoney = 0;
-    if (this.emptiesCollected) {
-        this.emptiesCollected.forEach(shop => {
+    if (this.shopCollections) {
+        this.shopCollections.forEach(shop => {
             shop.items.forEach(item => {
                 item.moneyCollected = item.brokenBottles * 3;
                 totalMoney += item.moneyCollected;

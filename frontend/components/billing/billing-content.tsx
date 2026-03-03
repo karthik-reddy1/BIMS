@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { CreateBillDialog } from "@/components/billing/create-bill-dialog"
+import { BillDetailModal } from "@/components/billing/bill-detail-modal"
 import api from "@/lib/api"
 import type { ApiShopBill } from "@/lib/types"
 
@@ -34,6 +35,7 @@ export function BillingContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [viewBill, setViewBill] = useState<ApiShopBill | null>(null)
 
   const fetchBills = useCallback(async () => {
     try {
@@ -117,11 +119,23 @@ export function BillingContent() {
                 </TableCell>
                 <TableCell className="pr-6">
                   <div className="flex items-center justify-end gap-1">
-                    <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground">
+                    {/* Eye — opens bill detail modal */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => setViewBill(bill)}
+                    >
                       <Eye className="h-4 w-4" />
                       <span className="sr-only">View</span>
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground">
+                    {/* Print — opens detail then triggers print */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => setViewBill(bill)}
+                    >
                       <Printer className="h-4 w-4" />
                       <span className="sr-only">Print</span>
                     </Button>
@@ -134,6 +148,12 @@ export function BillingContent() {
       </div>
 
       <CreateBillDialog open={dialogOpen} onOpenChange={setDialogOpen} onSaved={fetchBills} />
+
+      <BillDetailModal
+        bill={viewBill}
+        open={!!viewBill}
+        onOpenChange={(o) => { if (!o) setViewBill(null) }}
+      />
     </>
   )
 }

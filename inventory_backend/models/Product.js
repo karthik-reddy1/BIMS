@@ -18,6 +18,11 @@ const ProductSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  productGroup: {
+    type: String,
+    trim: true,
+    default: ''   // defaults to empty; frontend falls back to productName if empty
+  },
   size: {
     type: String,
     required: true,
@@ -111,7 +116,7 @@ const ProductSchema = new mongoose.Schema({
 });
 
 // Pre-save middleware to auto-calculate fields
-ProductSchema.pre('save', async function() {
+ProductSchema.pre('save', async function () {
   // Auto-set isReturnable based on packType
   this.isReturnable = this.packType === 'RGB';
 
@@ -119,7 +124,7 @@ ProductSchema.pre('save', async function() {
   this.perBottlePrice = this.casePrice / this.bottlesPerCase;
 
   // Calculate total bottles
-  this.filledStock.totalBottles = 
+  this.filledStock.totalBottles =
     (this.filledStock.cases * this.bottlesPerCase) + this.filledStock.looseBottles;
 
   // Calculate empty stock total
@@ -136,10 +141,10 @@ ProductSchema.pre('save', async function() {
 });
 
 // Virtual for shortage calculation
-ProductSchema.virtual('shortage').get(function() {
+ProductSchema.virtual('shortage').get(function () {
   if (!this.isReturnable) return 0;
-  return this.returnableAccounts.companyOwed - 
-         (this.emptyStock.good + this.returnableAccounts.shopsOwed);
+  return this.returnableAccounts.companyOwed -
+    (this.emptyStock.good + this.returnableAccounts.shopsOwed);
 });
 
 // Ensure virtuals are included in JSON

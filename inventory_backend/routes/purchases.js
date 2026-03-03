@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const CompanyPurchase = require('../models/CompanyPurchase');
-const Company = require('../models/Company');
+const Company = require('../models/company');
 const Product = require('../models/Product');
 const { generateId, updateReturnableBalance, sendSuccess, sendError } = require('../utils/helpers');
 

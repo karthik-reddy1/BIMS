@@ -1,16 +1,24 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useState } from "react"
-import { GlassWater, User, Menu, X } from "lucide-react"
+import { GlassWater, User, Menu, X, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const navItems = [
   { label: "Dashboard", href: "/" },
   { label: "Products", href: "/products" },
   { label: "Companies", href: "/companies" },
+  { label: "Shops", href: "/shops" },
   { label: "Billing", href: "/billing" },
   { label: "Routes", href: "/routes" },
   { label: "Reports", href: "/reports" },
@@ -18,7 +26,23 @@ const navItems = [
 
 export function AppNavigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      // Force hard reload to update Navigation state and middleware
+      window.location.href = "/login"
+    } catch (err) {
+      console.error("Failed to log out", err)
+    }
+  }
+
+  // Hide navigation entirely on the login page
+  if (pathname === '/login') {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-md bg-white/80 border-b border-border shadow-sm">
@@ -48,9 +72,27 @@ export function AppNavigation() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="rounded-full" aria-label="User profile">
-              <User className="h-5 w-5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full" aria-label="User profile">
+                  <User className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <div className="px-2 py-1.5 text-sm font-medium text-foreground">
+                  Admin User
+                </div>
+                <div className="px-2 pb-1.5 text-xs text-muted-foreground">
+                  admin@bis.com
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Log out</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button
               variant="ghost"
               size="icon"

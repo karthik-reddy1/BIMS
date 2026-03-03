@@ -62,10 +62,16 @@ export function AddPurchaseDialog({
     }).catch(() => { })
   }, [open])
 
-  // RGB products in inventory — these are the ones we can return to the company
+  // Only show products mapped to this company
+  const companyProducts = useMemo(
+    () => allProducts.filter((p) => p.brand === company?.name),
+    [allProducts, company]
+  )
+
+  // RGB products in inventory for this company — these are the ones we can return to the company
   const rgbProducts = useMemo(
-    () => allProducts.filter((p) => p.isReturnable && p.emptyStock.total > 0),
-    [allProducts]
+    () => companyProducts.filter((p) => p.isReturnable && p.emptyStock.total > 0),
+    [companyProducts]
   )
 
   const handleOpenChange = useCallback(
@@ -115,10 +121,10 @@ export function AddPurchaseDialog({
 
   const productTotal = useMemo(() => {
     return items.reduce((sum, item) => {
-      const product = allProducts.find((p) => p.productId === item.productId)
+      const product = companyProducts.find((p) => p.productId === item.productId)
       return sum + (product ? product.casePrice * item.cases : 0)
     }, 0)
-  }, [items, allProducts])
+  }, [items, companyProducts])
 
   const transport = Number(transportBill) || 0
 
@@ -199,7 +205,7 @@ export function AddPurchaseDialog({
             </div>
 
             {items.map((item, index) => {
-              const product = allProducts.find((p) => p.productId === item.productId)
+              const product = companyProducts.find((p) => p.productId === item.productId)
               const totalBottles = product ? product.bottlesPerCase * item.cases : 0
               const itemTotal = product ? product.casePrice * item.cases : 0
 
@@ -213,7 +219,7 @@ export function AddPurchaseDialog({
                           <SelectValue placeholder="Select product" />
                         </SelectTrigger>
                         <SelectContent>
-                          {allProducts.map((p) => (
+                          {companyProducts.map((p) => (
                             <SelectItem key={p.productId} value={p.productId}>
                               <span className="flex items-center gap-2">
                                 {p.productName}

@@ -6,6 +6,7 @@
 export interface ApiProduct {
     _id: string
     productId: string
+    productGroup: string      // new grouping field (e.g. "Thumbsup")
     brand: string
     productName: string
     size: string
@@ -78,7 +79,8 @@ export interface ApiRoute {
     routeId: string
     routeName: string
     description?: string
-    shops: string[]
+    shops?: string[]
+    activeBills?: ApiShopBill[]
     createdAt: string
     updatedAt: string
 }

@@ -35,17 +35,31 @@ router.post('/', async (req, res) => {
 
         const billId = await generateId(ShopBill, 'BILL', 'billId');
 
+        // Fetch Route safely if provided
+        let safeRouteName = req.body.routeName || null;
+        if (routeId) {
+            const Route = require('../models/Route');
+            const routeDoc = await Route.findOne({ routeId: routeId.toUpperCase() });
+            if (routeDoc) safeRouteName = routeDoc.routeName;
+        }
+
         const bill = await ShopBill.create({
             billId,
             shopId: shop.shopId,
             shopName: shop.shopName,
             routeId: routeId || null,
-            routeName: req.body.routeName || null,
+            routeName: safeRouteName,
             billDate,
             items: enrichedItems,
             paymentMode,
             paymentReceived
         });
+
+        // Automatically assign shop to this route for future reference
+        if (routeId && safeRouteName) {
+            shop.routeId = routeId;
+            shop.routeName = safeRouteName;
+        }
 
         // ===== Update Product Stock & Returnables =====
         for (const item of bill.items) {

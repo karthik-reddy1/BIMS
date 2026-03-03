@@ -21,8 +21,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased min-h-screen bg-gradient-to-br from-neutral-50 via-white to-stone-50`}>
+    <html lang="en" suppressHydrationWarning>
+      <body
+        suppressHydrationWarning
+        className={`${inter.variable} font-sans antialiased min-h-screen bg-gradient-to-br from-neutral-50 via-white to-stone-50`}
+      >
         <AppNavigation />
         <main className="max-w-7xl mx-auto px-4 md:px-6 py-8">
           {children}
