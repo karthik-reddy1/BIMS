@@ -50,30 +50,105 @@ export function BillDetailModal({
     const balance = bill.grandTotal - bill.paymentReceived
 
     const handlePrint = () => {
-        const printContent = printRef.current?.innerHTML
-        if (!printContent) return
-        const win = window.open("", "_blank", "width=700,height=900")
+        const win = window.open("", "_blank", "width=400,height=600")
         if (!win) return
+
+        // Build the item rows dynamically
+        const itemsList = bill.items.map(item => `
+            <tr class="item-row">
+                <td class="name">
+                    ${item.productName} ${item.size}<br/>
+                    <small>${item.quantity} x ₹${item.mrp}</small>
+                </td>
+                <td class="right">₹${item.mrp * item.quantity}</td>
+            </tr>
+        `).join('')
+
         win.document.write(`
       <html>
         <head>
-          <title>Bill ${bill.billId}</title>
+          <title>Receipt - ${bill.billId}</title>
           <style>
-            body { font-family: system-ui, sans-serif; padding: 24px; color: #111; }
-            h1 { font-size: 22px; margin-bottom: 4px; }
-            .meta { color: #666; font-size: 13px; margin-bottom: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th { text-align: left; padding: 8px 12px; background: #f4f4f4; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
-            td { padding: 8px 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+            @page { margin: 0; size: 80mm auto; }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              font-size: 12px; 
+              color: #000; 
+              margin: 0; 
+              padding: 10px; 
+              width: 80mm;
+              line-height: 1.4;
+            }
+            .center { text-align: center; }
             .right { text-align: right; }
-            .total-row { font-weight: 700; font-size: 16px; }
-            .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-            .badge-cash { background: #dcfce7; color: #166534; }
-            .badge-upi { background: #eff6ff; color: #1e40af; }
-            .badge-credit { background: #fee2e2; color: #991b1b; }
+            .strong { font-weight: bold; }
+            h1 { font-size: 18px; margin: 0 0 5px 0; }
+            h2 { font-size: 14px; margin: 0 0 10px 0; }
+            .divider { border-bottom: 1px dashed #000; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            th { text-align: left; font-weight: normal; border-bottom: 1px dashed #000; padding-bottom: 5px; }
+            th.right { text-align: right; }
+            td { vertical-align: top; padding: 5px 0; border-bottom: 1px dotted #ccc; }
+            .name { padding-right: 10px; }
+            .name small { color: #333; font-size: 10px; }
+            .totals { width: 100%; margin-top: 10px; }
+            .totals td { border: none; padding: 3px 0; }
+            .grand-total { font-size: 16px; font-weight: bold; border-top: 1px dashed #000 !important; border-bottom: 1px dashed #000 !important; padding: 8px 0 !important; }
+            .footer { text-align: center; margin-top: 20px; font-size: 10px; }
           </style>
         </head>
-        <body>${printContent}</body>
+        <body>
+          <div class="center">
+            <h1>Beverage Distributor</h1>
+            <p>Receipt: ${bill.billId}</p>
+          </div>
+          <div class="divider"></div>
+          <p>
+            <span class="strong">Shop:</span> ${bill.shopName}<br/>
+            ${bill.routeName ? `<span class="strong">Route:</span> ${bill.routeName}<br/>` : ''}
+            <span class="strong">Date:</span> ${new Date(bill.billDate).toLocaleString("en-IN", {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        })}<br/>
+            <span class="strong">Payment:</span> ${bill.paymentMode.toUpperCase()}
+          </p>
+          <div class="divider"></div>
+          
+          <table>
+            <thead>
+              <tr>
+                <th>Items</th>
+                <th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsList}
+            </tbody>
+          </table>
+
+          <table class="totals">
+            <tr>
+              <td>Items Total:</td>
+              <td class="right">₹${bill.itemsTotal || bill.grandTotal}</td>
+            </tr>
+            <tr>
+              <td class="grand-total">Grand Total:</td>
+              <td class="grand-total right">₹${bill.grandTotal}</td>
+            </tr>
+            <tr>
+              <td>Paid Amount:</td>
+              <td class="right">₹${bill.paymentReceived}</td>
+            </tr>
+            <tr>
+              <td class="strong">Balance Due:</td>
+              <td class="strong right">₹${balance > 0 ? balance : 0}</td>
+            </tr>
+          </table>
+
+          <div class="footer">
+            <p>Thank you for your business!</p>
+            <p>***</p>
+          </div>
+        </body>
       </html>
     `)
         win.document.close()
