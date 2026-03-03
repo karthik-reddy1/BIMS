@@ -367,7 +367,7 @@ export function CreateBillDialog({
                     }`}
                 >
                   {/* 3-step product picker row */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {/* Step 1 — Group */}
                     <div className="flex flex-col gap-1.5">
                       <Label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -443,8 +443,8 @@ export function CreateBillDialog({
 
                   {/* Product info strip + qty */}
                   {selectedProduct && (
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                      <div className="flex items-center gap-2 text-sm">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-2">
+                      <div className="flex flex-wrap items-center gap-2 text-sm w-full lg:w-auto">
                         {packBadge(selectedProduct.packType)}
                         <span className="text-muted-foreground">
                           Stock: <span className={`font-semibold ${selectedProduct.filledStock.totalBottles < 24 ? "text-destructive" : "text-foreground"}`}>
@@ -460,7 +460,7 @@ export function CreateBillDialog({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto mt-2 lg:mt-0 justify-start lg:justify-end">
                         {/* Qty Config */}
                         <div className="flex items-center gap-3">
                           <div className="flex flex-col items-center gap-1">
