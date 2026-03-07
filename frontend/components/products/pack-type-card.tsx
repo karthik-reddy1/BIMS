@@ -10,8 +10,8 @@ import type { ApiProduct } from "@/lib/types"
 
 const PACK_COLORS: Record<string, { bg: string; text: string; border: string }> = {
     RGB: { bg: "bg-success/10", text: "text-success", border: "border-success/20" },
-    PET: { bg: "bg-primary/10", text: "text-primary", border: "border-primary/20" },
-    CAN: { bg: "bg-warning/10", text: "text-warning-foreground", border: "border-warning/20" },
+    PET: { bg: "bg-cyan-50", text: "text-cyan-700", border: "border-cyan-200" },
+    CAN: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
     TTP: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
     MTP: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
 }

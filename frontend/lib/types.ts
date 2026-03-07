@@ -148,6 +148,7 @@ export interface ApiShopBill {
     paymentReceived: number
     createdAt: string
     updatedAt: string
+    isLocked?: boolean
 }
 
 // ── Empties Return ────────────────────────────

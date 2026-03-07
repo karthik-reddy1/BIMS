@@ -1,0 +1,24 @@
+{
+  "Products": [
+    {
+      "_id": "69a312089b50d18bd7ed372b",
+      "productId": "thumbsup-rgb-300ml",
+      "brand": "Coca Cola",
+      "productName": "Thumbsup"
+    },
+    {
+      "_id": "69abc964564cd409e529c6c6",
+      "productId": "THUMBSUP-PET-250ML",
+      "brand": "Coca Cola",
+      "productName": "Thumbsup"
+    }
+  ],
+  "Companies": [
+    {
+      "_id": "69a3f0b5b190286ad057f7ed",
+      "companyId": "COCA-COLA",
+      "companyName": "Coca Cola",
+      "returnableProducts": []
+    }
+  ]
+}

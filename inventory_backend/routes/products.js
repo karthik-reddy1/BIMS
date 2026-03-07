@@ -1,12 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
+const Company = require('../models/company');
 const { sendSuccess, sendError } = require('../utils/helpers');
 
 // GET /api/products/summary/stock  (defined BEFORE /:productId to avoid param conflict)
 router.get('/summary/stock', async (req, res) => {
     try {
         const products = await Product.find();
+        const companies = await Company.find({}, 'companyId companyName brand'); // Fetch minimal data
+
+        // Build a mapping from brand name to companyId
+        // Assuming companyName or a brand field matches Product's brand.
+        const companyMap = {};
+        companies.forEach(c => {
+            if (c.companyName) {
+                const key = c.companyName.trim().toLowerCase();
+                companyMap[key] = c.companyId;
+            }
+        });
+
         const byPackType = {};
         let totalEmptiesGood = 0, totalEmptiesBroken = 0;
         let totalCompanyOwed = 0, totalShopsOwed = 0;
@@ -20,8 +33,15 @@ router.get('/summary/stock', async (req, res) => {
                 totalCompanyOwed += p.returnableAccounts.companyOwed;
                 totalShopsOwed += p.returnableAccounts.shopsOwed;
             }
-            if (p.filledStock.cases < 2) {
-                lowStock.push({ productId: p.productId, productName: p.productName, cases: p.filledStock.cases, bottles: p.filledStock.looseBottles });
+            if (p.filledStock.cases <= 10) {
+                const cId = p.brand ? (companyMap[p.brand.trim().toLowerCase()] || null) : null;
+                lowStock.push({
+                    productId: p.productId,
+                    productName: p.productName,
+                    cases: p.filledStock.cases,
+                    bottles: p.filledStock.looseBottles,
+                    companyId: cId
+                });
             }
         });
 

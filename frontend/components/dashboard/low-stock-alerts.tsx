@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ type LowStockItem = {
   productName: string
   cases: number
   bottles: number
+  companyId?: string
 }
 
 type StockSummary = {
@@ -53,7 +55,7 @@ export function LowStockAlerts() {
           {lowStock.length}
         </Badge>
       </div>
-      <div className="px-6 pb-6 flex flex-col gap-3">
+      <div className="px-6 pb-6 flex flex-col gap-3 max-h-[320px] overflow-y-auto">
         {lowStock.map((item) => {
           const severity = item.cases === 0 ? "critical" : "warning"
           return (
@@ -77,9 +79,19 @@ export function LowStockAlerts() {
                 >
                   {item.cases === 0 ? "Out" : "Low"}
                 </Badge>
-                <Button size="sm" variant="outline" className="text-xs h-7">
-                  Reorder
-                </Button>
+                {item.companyId ? (
+                  <Link href={`/companies/${item.companyId}`}>
+                    <Button size="sm" variant="outline" className="text-xs h-7">
+                      Reorder
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link href="/companies">
+                    <Button size="sm" variant="outline" className="text-xs h-7">
+                      Reorder
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           )

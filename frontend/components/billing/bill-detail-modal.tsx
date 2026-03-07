@@ -1,10 +1,12 @@
 "use client"
 
-import { useRef } from "react"
-import { Printer, X } from "lucide-react"
+import { format } from "date-fns"
+import { useRef, useState, useEffect } from "react"
+import { Printer, X, CheckCircle2, Wallet, User, Calendar, Receipt, Lock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { Card } from "@/components/ui/card"
 import {
     Dialog,
     DialogContent,
@@ -12,14 +14,16 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table"
-import type { ApiShopBill } from "@/lib/types"
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import api from "@/lib/api"
+import { useToast } from "@/components/ui/use-toast"
+import type { ApiShopBill, ApiRoute } from "@/lib/types"
 
 function PaymentBadge({ mode }: { mode: string }) {
     switch (mode?.toLowerCase()) {
@@ -136,21 +140,57 @@ export function printBill(bill: ApiShopBill) {
 }
 
 export function BillDetailModal({
-    bill,
+    bill: initialBill,
     open,
     onOpenChange,
+    onBillUpdate
 }: {
     bill: ApiShopBill | null
     open: boolean
     onOpenChange: (open: boolean) => void
+    onBillUpdate?: () => void
 }) {
     const printRef = useRef<HTMLDivElement>(null)
+    const { toast } = useToast()
+    const [localBill, setLocalBill] = useState<ApiShopBill | null>(initialBill)
+    const [isEditingRoute, setIsEditingRoute] = useState(false)
+    const [routes, setRoutes] = useState<ApiRoute[]>([])
+    const [updatingRoute, setUpdatingRoute] = useState(false)
 
-    if (!bill) return null
+    useEffect(() => {
+        setLocalBill(initialBill)
+    }, [initialBill])
 
-    const balance = bill.grandTotal - bill.paymentReceived
+    useEffect(() => {
+        if (open && isEditingRoute && routes.length === 0) {
+            api.get<ApiRoute[]>("/routes").then(res => setRoutes(res.data)).catch(console.error)
+        }
+    }, [open, isEditingRoute, routes.length])
 
-    const handlePrint = () => printBill(bill)
+    if (!localBill) return null
+
+    const handleRouteUpdate = async (routeId: string) => {
+        try {
+            setUpdatingRoute(true)
+            const res = await api.patch<{ data: ApiShopBill }>(`/bills/${localBill.billId}/route`, { routeId })
+            setLocalBill(res.data.data) // Assuming sendSuccess structure { success: true, data: ... }
+            setIsEditingRoute(false)
+            if (onBillUpdate) onBillUpdate()
+        } catch (err: any) {
+            console.error(err)
+            toast({
+                title: "Failed to update route",
+                description: err.response?.data?.message || err.message || "An unknown error occurred",
+                variant: "destructive"
+            })
+        } finally {
+            setUpdatingRoute(false)
+        }
+    }
+
+    const balance = localBill.grandTotal - localBill.paymentReceived
+
+    const handlePrint = () => printBill(localBill)
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -159,28 +199,61 @@ export function BillDetailModal({
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <DialogTitle className="text-2xl font-bold text-foreground">
-                                {bill.billId}
+                                {localBill.billId}
                             </DialogTitle>
-                            <p className="text-muted-foreground text-sm mt-1">
-                                {bill.shopName}
-                                {bill.routeName && <span className="ml-2">· {bill.routeName}</span>}
-                                <span className="ml-2">·</span>
-                                <span className="ml-2">
-                                    {new Date(bill.billDate).toLocaleDateString("en-IN", {
-                                        day: "numeric", month: "long", year: "numeric"
-                                    })}
-                                </span>
-                            </p>
+                            <div className="text-muted-foreground text-sm mt-1 flex items-center gap-2">
+                                <span>{localBill.shopName}</span>
+
+                                <span className="text-muted-foreground/50">·</span>
+
+                                {isEditingRoute ? (
+                                    <div className="flex items-center gap-2">
+                                        <Select onValueChange={handleRouteUpdate} disabled={updatingRoute}>
+                                            <SelectTrigger className="h-7 text-xs w-[140px] bg-white">
+                                                <SelectValue placeholder="Select Route" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {routes.map(r => (
+                                                    <SelectItem key={r.routeId} value={r.routeId}>
+                                                        {r.routeName}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setIsEditingRoute(false)}>
+                                            <X className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                ) : localBill.isLocked ? (
+                                    <div className="flex items-center gap-1 text-muted-foreground" title="Cannot change route. This bill has already been processed in a Route Bill.">
+                                        <span>{localBill.routeName || "No Route"}</span>
+                                        <Lock className="h-3 w-3" />
+                                    </div>
+                                ) : (
+                                    <span
+                                        className="cursor-pointer hover:text-primary transition-colors flex items-center gap-1"
+                                        onClick={() => setIsEditingRoute(true)}
+                                    >
+                                        {localBill.routeName || "No Route"}
+                                    </span>
+                                )}
+
+                                <span className="text-muted-foreground/50">·</span>
+
+                                <span>{format(new Date(localBill.billDate), "d MMMM yyyy")}</span>
+                            </div>
                         </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-shrink-0 gap-1.5"
-                            onClick={handlePrint}
-                        >
-                            <Printer className="h-4 w-4" />
-                            Print
-                        </Button>
+                        <div className="flex flex-col items-end gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-shrink-0 gap-1.5"
+                                onClick={handlePrint}
+                            >
+                                <Printer className="h-4 w-4" />
+                                Print
+                            </Button>
+                        </div>
                     </div>
                 </DialogHeader>
 
@@ -190,9 +263,9 @@ export function BillDetailModal({
                     <div className="hidden print:block mb-4">
                         <h1>Beverage Inventory System</h1>
                         <p className="meta">
-                            Bill: {bill.billId} &nbsp;|&nbsp; Shop: {bill.shopName}
-                            {bill.routeName && <> &nbsp;|&nbsp; Route: {bill.routeName}</>}
-                            &nbsp;|&nbsp; Date: {new Date(bill.billDate).toLocaleDateString("en-IN")}
+                            Bill: {localBill.billId} &nbsp;|&nbsp; Shop: {localBill.shopName}
+                            {localBill.routeName && <> &nbsp;|&nbsp; Route: {localBill.routeName}</>}
+                            &nbsp;|&nbsp; Date: {new Date(localBill.billDate).toLocaleDateString("en-IN")}
                         </p>
                     </div>
 
@@ -209,23 +282,18 @@ export function BillDetailModal({
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {bill.items.map((item, i) => (
+                                {localBill.items.map((item, i) => (
                                     <TableRow key={i} className="hover:bg-muted/30">
                                         <TableCell className="pl-4">
                                             <p className="font-medium text-foreground">{item.productName}</p>
-                                            <p className="text-xs text-muted-foreground">{item.size}</p>
+                                            {item.size && <p className="text-xs text-muted-foreground">{item.size}</p>}
                                         </TableCell>
                                         <TableCell className="hidden sm:table-cell">
                                             <Badge
                                                 variant="secondary"
-                                                className={
-                                                    item.packType === "RGB" ? "bg-success/10 text-success border-0" :
-                                                        item.packType === "PET" ? "bg-primary/10 text-primary border-0" :
-                                                            "bg-muted text-muted-foreground border-0"
-                                                }
+                                                className={`bg-${item.packType?.toLowerCase()}/10 text-${item.packType?.toLowerCase()} border-${item.packType?.toLowerCase()}/20 text-[10px]`}
                                             >
-                                                {item.packType}
-                                                {item.isReturnable && " · R"}
+                                                {item.packType} {item.isReturnable && "- R"}
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-right text-muted-foreground text-sm">
@@ -246,33 +314,32 @@ export function BillDetailModal({
                     {/* Totals */}
                     <div className="bg-muted/30 rounded-xl p-4 flex flex-col gap-2">
                         <div className="flex justify-between text-sm text-muted-foreground">
-                            <span>Items Total</span>
-                            <span>₹{bill.itemsTotal?.toLocaleString("en-IN") ?? bill.grandTotal.toLocaleString("en-IN")}</span>
+                            <span className="text-muted-foreground">Items Total</span>
+                            <span className="font-semibold text-muted-foreground">₹{localBill.items.reduce((s, i) => s + (i.mrp * i.quantity), 0).toLocaleString("en-IN")}</span>
                         </div>
                         <Separator />
-                        <div className="flex justify-between text-lg font-bold text-foreground">
-                            <span>Grand Total</span>
-                            <span>₹{bill.grandTotal.toLocaleString("en-IN")}</span>
+                        <div className="flex justify-between items-center text-lg">
+                            <span className="font-bold text-foreground">Grand Total</span>
+                            <span className="font-bold text-foreground">₹{localBill.grandTotal?.toLocaleString("en-IN")}</span>
                         </div>
                     </div>
 
                     {/* Payment info */}
                     <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-muted/30 rounded-xl p-3 flex flex-col gap-1">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payment Mode</p>
-                            <PaymentBadge mode={bill.paymentMode} />
-                        </div>
-                        <div className="bg-muted/30 rounded-xl p-3 flex flex-col gap-1">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Received</p>
-                            <p className="text-base font-bold text-success">₹{bill.paymentReceived.toLocaleString("en-IN")}</p>
-                        </div>
-                        <div className="bg-muted/30 rounded-xl p-3 flex flex-col gap-1">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Balance</p>
-                            <p className={`text-base font-bold ${balance > 0 ? "text-destructive" : "text-success"}`}>
-                                ₹{Math.abs(balance).toLocaleString("en-IN")}
-                                {balance > 0 ? " due" : balance < 0 ? " extra" : " settled"}
-                            </p>
-                        </div>
+                        <Card className="p-4 bg-muted/30 border-none">
+                            <div className="text-xs font-semibold text-muted-foreground tracking-wider mb-2 uppercase">Payment Mode</div>
+                            <PaymentBadge mode={localBill.paymentMode} />
+                        </Card>
+                        <Card className="p-4 bg-success/5 border-none">
+                            <div className="text-xs font-semibold text-muted-foreground tracking-wider mb-2 uppercase">Received</div>
+                            <div className="text-xl font-bold text-success">₹{localBill.paymentReceived?.toLocaleString("en-IN")}</div>
+                        </Card>
+                        <Card className="p-4 bg-muted/30 border-none">
+                            <div className="text-xs font-semibold text-muted-foreground tracking-wider mb-2 uppercase">Balance</div>
+                            <div className={`text-xl font-bold ${balance > 0 ? "text-destructive" : "text-foreground"}`}>
+                                {balance > 0 ? `₹${balance.toLocaleString("en-IN")} due` : "Settled"}
+                            </div>
+                        </Card>
                     </div>
                 </div>
             </DialogContent>

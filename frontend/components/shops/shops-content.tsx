@@ -1,11 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Building2, Search, MapPin, Phone, Trash2, Package } from "lucide-react"
+import { Building2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -18,11 +15,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import api from "@/lib/api"
 import type { ApiShop } from "@/lib/types"
+import { ShopCard } from "./shop-card"
+import { ShopDetailModal } from "./shop-detail-modal"
 
 export function ShopsContent() {
     const [shops, setShops] = useState<ApiShop[]>([])
     const [search, setSearch] = useState("")
     const [shopToDelete, setShopToDelete] = useState<ApiShop | null>(null)
+    const [selectedShop, setSelectedShop] = useState<ApiShop | null>(null)
 
     const fetchShops = () => {
         api.get<ApiShop[]>("/shops").then((res) => setShops(res.data)).catch(console.error)
@@ -73,74 +73,14 @@ export function ShopsContent() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredShops.map((shop) => (
-                    <Card key={shop.shopId} className="group relative bg-white/50 backdrop-blur-md border border-border shadow-sm hover:shadow-md transition-all duration-300">
-                        <Button
-                            variant="destructive"
-                            size="icon"
-                            className="absolute top-4 right-4 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => setShopToDelete(shop)}
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <CardContent className="p-6">
-                            <div className="flex items-start gap-4 mb-4 pr-8">
-                                <div className="p-3 bg-primary/10 rounded-xl">
-                                    <Building2 className="h-6 w-6 text-primary" />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-foreground line-clamp-1">{shop.shopName}</h3>
-                                    <p className="text-sm text-muted-foreground">{shop.shopId}</p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-3 mb-6">
-                                {(shop.phone || shop.address) && (
-                                    <div className="space-y-2 pb-3 border-b border-border/50">
-                                        {shop.phone && (
-                                            <div className="flex items-center gap-2 text-sm text-foreground">
-                                                <Phone className="h-4 w-4 text-muted-foreground" />
-                                                {shop.phone}
-                                            </div>
-                                        )}
-                                        {shop.address && (
-                                            <div className="flex items-center gap-2 text-sm text-foreground">
-                                                <MapPin className="h-4 w-4 text-muted-foreground" />
-                                                <span className="line-clamp-1">{shop.address}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="flex justify-between items-center py-2">
-                                    <span className="text-sm text-muted-foreground">Outstanding</span>
-                                    <span className={`text-lg font-bold ${shop.outstandingAmount > 0 ? 'text-destructive' : 'text-success'}`}>
-                                        ₹{shop.outstandingAmount?.toLocaleString("en-IN") || 0}
-                                    </span>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <span className="text-sm text-muted-foreground flex items-center gap-2">
-                                        <Package className="h-4 w-4" /> Empties Owed
-                                    </span>
-                                    {shop.returnableProducts && shop.returnableProducts.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2">
-                                            {shop.returnableProducts.filter(r => r.emptiesOwed > 0).map(ret => (
-                                                <Badge key={ret.productId} variant="secondary" className="bg-secondary/20">
-                                                    {ret.productName}: {ret.emptiesOwed}
-                                                </Badge>
-                                            ))}
-                                            {shop.returnableProducts.filter(r => r.emptiesOwed > 0).length === 0 && (
-                                                <span className="text-xs text-muted-foreground italic">No empties owed</span>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <span className="text-xs text-muted-foreground italic">No empties owed</span>
-                                    )}
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <ShopCard
+                        key={shop.shopId}
+                        shop={shop}
+                        onDelete={setShopToDelete}
+                        onClick={setSelectedShop}
+                    />
                 ))}
+
                 {filteredShops.length === 0 && (
                     <div className="col-span-full py-12 text-center border-2 border-dashed border-border rounded-xl">
                         <Building2 className="mx-auto h-8 w-8 text-muted-foreground opacity-50 mb-2" />
@@ -148,6 +88,21 @@ export function ShopsContent() {
                     </div>
                 )}
             </div>
+
+            <ShopDetailModal
+                shop={selectedShop}
+                open={!!selectedShop}
+                onOpenChange={(open) => !open && setSelectedShop(null)}
+                onPaymentComplete={() => {
+                    api.get<ApiShop[]>("/shops").then((res) => {
+                        setShops(res.data)
+                        if (selectedShop) {
+                            const updatedShop = res.data.find(s => s.shopId === selectedShop.shopId)
+                            if (updatedShop) setSelectedShop(updatedShop)
+                        }
+                    }).catch(console.error)
+                }}
+            />
 
             <AlertDialog open={!!shopToDelete} onOpenChange={(open) => !open && setShopToDelete(null)}>
                 <AlertDialogContent>

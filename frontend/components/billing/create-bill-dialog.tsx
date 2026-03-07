@@ -65,6 +65,7 @@ export function CreateBillDialog({
 }) {
   const [newShopMode, setNewShopMode] = useState(false)
   const [newShopName, setNewShopName] = useState("")
+  const [newShopPhone, setNewShopPhone] = useState("")
   const [shopId, setShopId] = useState("")
   const [routeId, setRouteId] = useState("")
   const [paymentMode, setPaymentMode] = useState("")
@@ -192,9 +193,9 @@ export function CreateBillDialog({
     setShopId("")
     setNewShopMode(false)
     setNewShopName("")
+    setNewShopPhone("")
     setRouteId("")
     setPaymentMode("")
-    setAmountReceived("")
     setError(null)
   }
 
@@ -233,6 +234,7 @@ export function CreateBillDialog({
         const shopRes = await api.post<ApiShop>("/shops", {
           shopId: autoShopId,
           shopName: newShopName.trim(),
+          phone: newShopPhone.trim(),
           routeId: finalRouteId || null,
           routeName: finalRouteName,
         })
@@ -256,7 +258,7 @@ export function CreateBillDialog({
           quantity: i.quantity
         })),
         paymentMode,
-        paymentReceived: Number(amountReceived) || 0,
+        paymentReceived: 0,
       })
       onSaved?.()
       onOpenChange(false)
@@ -287,29 +289,44 @@ export function CreateBillDialog({
             <div className="flex flex-col gap-2">
               <Label className="text-foreground">Shop <span className="text-destructive">*</span></Label>
               {newShopMode ? (
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Input
                     value={newShopName}
                     onChange={(e) => setNewShopName(e.target.value)}
-                    placeholder="Type new shop name"
+                    placeholder="Shop name"
                     className="bg-white/80 border-border flex-1"
                     autoFocus
+                  />
+                  <Input
+                    value={newShopPhone}
+                    onChange={(e) => setNewShopPhone(e.target.value)}
+                    placeholder="Phone number"
+                    className="bg-white/80 border-border flex-1"
                   />
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => { setNewShopMode(false); setNewShopName("") }}
-                    className="shrink-0"
+                    onClick={() => { setNewShopMode(false); setNewShopName(""); setNewShopPhone("") }}
+                    className="shrink-0 h-10 w-10 px-0"
                   >
-                    ✕
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
               ) : (
                 <Select
                   value={shopId}
                   onValueChange={(v) => {
-                    if (v === "__new__") { setNewShopMode(true); setShopId("") }
-                    else setShopId(v)
+                    if (v === "__new__") {
+                      setNewShopMode(true)
+                      setShopId("")
+                      setRouteId("no-route")
+                    } else {
+                      setShopId(v)
+                      const s = shops.find(shop => shop.shopId === v)
+                      if (s && s.routeId) {
+                        setRouteId(s.routeId)
+                      }
+                    }
                   }}
                 >
                   <SelectTrigger className="bg-white/80 border-border">
@@ -582,19 +599,7 @@ export function CreateBillDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label className="text-foreground">Amount Received</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
-                <Input
-                  type="number"
-                  value={amountReceived}
-                  onChange={(e) => setAmountReceived(e.target.value)}
-                  placeholder="0"
-                  className="pl-7 bg-white/80 border-border"
-                />
-              </div>
-            </div>
+
           </div>
 
           {/* Submit */}

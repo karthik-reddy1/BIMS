@@ -11,25 +11,19 @@ router.get('/', async (req, res) => {
     try {
         const routes = await Route.find().lean().sort({ routeName: 1 });
 
-        // Get bills from the last 24 hours to safely avoid UTC boundaries
-        const startOfDay = new Date();
-        startOfDay.setHours(startOfDay.getHours() - 24);
-
-        // Find all routes that have uncompleted route bills, or have shop bills today.
+        // Find all routes that have uncompleted route bills, or have shop bills.
         const routesWithBills = await Promise.all(routes.map(async (route) => {
-            // Find ALL Route Bills created today for this route
-            const todayRouteBills = await RouteBill.find({
-                routeId: route.routeId,
-                routeDate: { $gte: startOfDay }
+            // Find ALL Route Bills for this route
+            const allRouteBills = await RouteBill.find({
+                routeId: route.routeId
             }).lean();
 
             // Extract all the shopBillIds that have already been tied to a Route Bill
-            const processedBillIds = todayRouteBills.reduce((acc, rb) => acc.concat(rb.shopBillIds || []), []);
+            const processedBillIds = allRouteBills.reduce((acc, rb) => acc.concat(rb.shopBillIds || []), []);
 
-            // Find shop bills associated with this route from today, EXCLUDING ones already processed
+            // Find shop bills associated with this route, EXCLUDING ones already processed
             const activeBills = await ShopBill.find({
                 routeId: route.routeId,
-                billDate: { $gte: startOfDay },
                 billId: { $nin: processedBillIds }
             }).lean();
 
