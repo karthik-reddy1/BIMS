@@ -12,9 +12,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 import { AddRouteDialog } from "./add-route-dialog"
+import { BillDetailModal } from "@/components/billing/bill-detail-modal"
 import api from "@/lib/api"
-import type { ApiRoute, ApiShopBill } from "@/lib/types"
+import type { ApiRoute, ApiShopBill, ApiShop, ApiProduct } from "@/lib/types"
 
 // Track returnable empties per bill per product
 type EmptiesState = Record<string, Record<string, { good: number; broken: number }>>
@@ -32,11 +40,31 @@ export function RoutesContent() {
   const [empties, setEmpties] = useState<EmptiesState>({})
   const [submitting, setSubmitting] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [shopsMap, setShopsMap] = useState<Record<string, ApiShop>>({})
+  const [productsMap, setProductsMap] = useState<Record<string, ApiProduct>>({})
+
+  // Bill View State
+  const [viewBill, setViewBill] = useState<ApiShopBill | null>(null)
+
+  // Load Sheet State
+  const [loadSheetRoute, setLoadSheetRoute] = useState<ApiRoute | null>(null)
+  const [loadSheetOpen, setLoadSheetOpen] = useState(false)
 
   const fetchRoutes = useCallback(async () => {
     try {
-      const res = await api.get<ApiRoute[]>("/routes")
+      const [res, shopsRes, productsRes] = await Promise.all([
+        api.get<ApiRoute[]>("/routes"),
+        api.get<ApiShop[]>("/shops"),
+        api.get<ApiProduct[]>("/products")
+      ])
       setRoutes(res.data)
+      const sMap: Record<string, ApiShop> = {}
+      shopsRes.data.forEach(s => { sMap[s.shopId] = s })
+      setShopsMap(sMap)
+
+      const pMap: Record<string, ApiProduct> = {}
+      productsRes.data.forEach(p => { pMap[p.productId] = p })
+      setProductsMap(pMap)
     } catch {
       // silent
     } finally {
@@ -84,6 +112,44 @@ export function RoutesContent() {
       },
     }))
   }
+
+  const handleOpenLoadSheet = (route: ApiRoute) => {
+    setLoadSheetRoute(route)
+    setLoadSheetOpen(true)
+  }
+
+  const getLoadSheetItems = (route: ApiRoute | null) => {
+    if (!route || !route.activeBills || route.activeBills.length === 0) return []
+
+    // Aggregate all items across all active bills
+    const itemMap = new Map<string, { name: string; quantity: number, bottlesPerCase: number }>()
+
+    route.activeBills.forEach(bill => {
+      bill.items.forEach(item => {
+        const product = productsMap[item.productId]
+        const bpc = product?.bottlesPerCase || 1 // default to 1 if not found to avoid div by zero
+
+        const existing = itemMap.get(item.productId)
+        if (existing) {
+          existing.quantity += item.quantity
+        } else {
+          itemMap.set(item.productId, {
+            name: [item.productName, item.size, item.packType].filter(Boolean).join(" "),
+            quantity: item.quantity,
+            bottlesPerCase: bpc
+          })
+        }
+      })
+    })
+
+    return Array.from(itemMap.values()).map(item => {
+      const cases = Math.floor(item.quantity / item.bottlesPerCase)
+      const loose = item.quantity % item.bottlesPerCase
+      return { ...item, cases, loose }
+    }).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  const loadSheetItems = getLoadSheetItems(loadSheetRoute)
 
   const activeRoute = routes.find((r) => r.routeId === activeRouteId)
   const totalAmount = routeBills.reduce((s, b) => s + (b.grandTotal ?? 0), 0)
@@ -200,18 +266,27 @@ export function RoutesContent() {
                     {route.description && (
                       <p className="text-sm text-muted-foreground mb-4">{route.description}</p>
                     )}
-                    <Button
-                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={() => {
-                        setActiveRouteId(route.routeId)
-                        setCompleting(false)
-                        setCashReceived("")
-                        setRouteExpenses("")
-                        loadRouteBills(route.routeId)
-                      }}
-                    >
-                      {"Today's Bill"}
-                    </Button>
+                    <div className="flex flex-col gap-2 mt-4">
+                      <Button
+                        className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                        onClick={() => {
+                          setActiveRouteId(route.routeId)
+                          setCompleting(false)
+                          setCashReceived("")
+                          setRouteExpenses("")
+                          loadRouteBills(route.routeId)
+                        }}
+                      >
+                        {"Today's Bill"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => handleOpenLoadSheet(route)}
+                      >
+                        View Load Sheet
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -272,16 +347,33 @@ export function RoutesContent() {
                     <div className="flex items-center gap-2 mb-1">
                       <Check className="h-4 w-4 text-success" />
                       <span className="font-medium text-foreground">{bill.billId} - {bill.shopName}</span>
-                      <span className="ml-auto font-semibold text-foreground">
-                        ₹{bill.grandTotal?.toLocaleString("en-IN")}
-                      </span>
+                      <div className="ml-auto flex items-center gap-3">
+                        <span className="font-semibold text-foreground">
+                          ₹{bill.grandTotal?.toLocaleString("en-IN")}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-primary"
+                          onClick={() => setViewBill(bill)}
+                        >
+                          <svg xmlns="http://www.0w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" /><circle cx="12" cy="12" r="3" /></svg>
+                        </Button>
+                      </div>
                     </div>
                     <div className="pl-6 flex flex-col gap-0.5">
-                      {bill.items.map((item) => (
-                        <p key={item.productId} className="text-sm text-muted-foreground">
-                          {item.productName}: {item.quantity} bottles
-                        </p>
-                      ))}
+                      {bill.items.map((item) => {
+                        const product = productsMap[item.productId]
+                        const bpc = product?.bottlesPerCase || 1
+                        const cases = Math.floor(item.quantity / bpc)
+                        const loose = item.quantity % bpc
+                        const qtyText = cases > 0 && loose > 0 ? `${cases} cs, ${loose} btls` : cases > 0 ? `${cases} cs` : `${loose} btls`
+                        return (
+                          <p key={item.productId} className="text-sm text-muted-foreground">
+                            {item.productName}: {qtyText}
+                          </p>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
@@ -338,6 +430,9 @@ export function RoutesContent() {
                 <Accordion type="single" collapsible className="flex flex-col gap-2">
                   {routeBills.map((bill) => {
                     const returnableItems = bill.items.filter((i) => i.isReturnable)
+                    const shop = shopsMap[bill.shopId]
+                    const previousDebt = shop ? Math.max(0, shop.outstandingAmount - (bill.grandTotal || 0)) : 0
+
                     return (
                       <AccordionItem
                         key={bill.billId}
@@ -347,7 +442,12 @@ export function RoutesContent() {
                         <AccordionTrigger className="text-sm font-medium text-foreground hover:no-underline py-3">
                           <div className="flex justify-between items-center w-full pr-4">
                             <span>{bill.shopName}</span>
-                            <span className="text-muted-foreground text-sm font-normal">Bill: ₹{bill.grandTotal?.toLocaleString("en-IN")}</span>
+                            <div className="flex flex-col items-end gap-0.5 mt-1 sm:mt-0 sm:flex-row sm:items-center sm:gap-4">
+                              {previousDebt > 0 && (
+                                <span className="text-xs text-destructive font-semibold">Legacy: ₹{previousDebt.toLocaleString("en-IN")}</span>
+                              )}
+                              <span className="text-sm font-bold text-foreground">Due: ₹{(shop?.outstandingAmount || bill.grandTotal || 0).toLocaleString("en-IN")}</span>
+                            </div>
                           </div>
                         </AccordionTrigger>
                         <AccordionContent className="pb-4 flex flex-col gap-6">
@@ -455,6 +555,65 @@ export function RoutesContent() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onSaved={fetchRoutes}
+      />
+
+      {/* Load Sheet Modal */}
+      <Dialog open={loadSheetOpen} onOpenChange={setLoadSheetOpen}>
+        <DialogContent className="max-w-md w-[95vw] backdrop-blur-xl bg-white/95 rounded-2xl p-6 border border-border">
+          <DialogHeader className="mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-primary/10 rounded-xl">
+                <Truck className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold">Load Sheet</DialogTitle>
+                <div className="text-sm text-muted-foreground">{loadSheetRoute?.routeName}</div>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-2">
+            {loadSheetItems.length === 0 ? (
+              <p className="text-muted-foreground italic text-center py-4">No items to load.</p>
+            ) : (
+              loadSheetItems.map((item, index) => (
+                <div key={index} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-muted/40 rounded-xl border border-border gap-2">
+                  <span className="font-medium text-foreground">{item.name}</span>
+                  <div className="flex items-center gap-2">
+                    {item.cases > 0 && (
+                      <Badge variant="secondary" className="px-3 py-1 bg-white shadow-sm border border-border text-sm whitespace-nowrap">
+                        {item.cases} <span className="text-xs text-muted-foreground ml-1">cases</span>
+                      </Badge>
+                    )}
+                    {item.loose > 0 && (
+                      <Badge variant="outline" className="px-3 py-1 bg-white border-border text-sm whitespace-nowrap">
+                        {item.loose} <span className="text-xs text-muted-foreground ml-1">cases</span>
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-border flex justify-end">
+            <Button onClick={() => setLoadSheetOpen(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bill Detail Modal */}
+      <BillDetailModal
+        bill={viewBill}
+        open={!!viewBill}
+        onOpenChange={(o) => { if (!o) setViewBill(null) }}
+        onBillUpdate={() => {
+          fetchRoutes();
+          if (activeRouteId) {
+            loadRouteBills(activeRouteId);
+          }
+          setViewBill(null);
+        }}
       />
     </div>
   )

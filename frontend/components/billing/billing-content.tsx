@@ -153,6 +153,10 @@ export function BillingContent() {
         bill={viewBill}
         open={!!viewBill}
         onOpenChange={(o) => { if (!o) setViewBill(null) }}
+        onBillUpdate={() => {
+          fetchBills();
+          setViewBill(null); // Close modal down so they see the table updated
+        }}
       />
     </>
   )

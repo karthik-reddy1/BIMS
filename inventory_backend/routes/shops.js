@@ -63,6 +63,24 @@ router.put('/:shopId', async (req, res) => {
     }
 });
 
+// POST /api/shops/:shopId/payment
+router.post('/:shopId/payment', async (req, res) => {
+    try {
+        const { amount } = req.body;
+        if (!amount || amount <= 0) return sendError(res, 'Invalid payment amount', 400);
+
+        const shop = await Shop.findOne({ shopId: req.params.shopId.toUpperCase() });
+        if (!shop) return sendError(res, 'Shop not found', 404);
+
+        shop.outstandingAmount = Math.max(0, (shop.outstandingAmount || 0) - amount);
+        await shop.save();
+
+        sendSuccess(res, shop, `Payment of ₹${amount} recorded for ${shop.shopName}`);
+    } catch (err) {
+        sendError(res, err.message);
+    }
+});
+
 // DELETE /api/shops/:shopId
 router.delete('/:shopId', async (req, res) => {
     try {

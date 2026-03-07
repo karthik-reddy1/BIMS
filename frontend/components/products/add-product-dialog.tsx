@@ -46,7 +46,7 @@ export function AddProductDialog({
     const [mrp, setMrp] = useState("")
     const [casePrice, setCasePrice] = useState("")
     const [bottlesPerCase, setBottlesPerCase] = useState("")
-    const [isReturnable, setIsReturnable] = useState(true)
+    const [isReturnable, setIsReturnable] = useState(false)
 
     // Initial Stock fields
     const [filledCases, setFilledCases] = useState("")
@@ -83,7 +83,7 @@ export function AddProductDialog({
         setMrp("")
         setCasePrice("")
         setBottlesPerCase("")
-        setIsReturnable(true)
+        setIsReturnable(false)
         setFilledCases("")
         setFilledLoose("")
         setEmptyGood("")

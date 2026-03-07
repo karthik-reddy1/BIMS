@@ -61,6 +61,10 @@ router.post('/', async (req, res) => {
             shop.routeName = safeRouteName;
         }
 
+        // Increment shop outstanding balance with new unpaid amount
+        const unpaidAmount = bill.grandTotal - (paymentReceived || 0);
+        shop.outstandingAmount = (shop.outstandingAmount || 0) + unpaidAmount;
+
         // ===== Update Product Stock & Returnables =====
         for (const item of bill.items) {
             const product = await Product.findOne({ productId: item.productId });
@@ -96,6 +100,31 @@ router.post('/', async (req, res) => {
     }
 });
 
+const RouteBill = require('../models/RouteBill');
+
+// Helper to attach isLocked state
+async function attachLockStatus(bills) {
+    if (!Array.isArray(bills)) {
+        const rb = await RouteBill.findOne({ shopBillIds: bills.billId });
+        return { ...bills.toObject(), isLocked: !!rb };
+    }
+
+    // For arrays, fetch all route bills that might contain these
+    const billIds = bills.map(b => b.billId);
+    const rbs = await RouteBill.find({ shopBillIds: { $in: billIds } });
+
+    // Create a Set of locked bill IDs for fast lookup
+    const lockedIds = new Set();
+    rbs.forEach(rb => {
+        rb.shopBillIds.forEach(id => lockedIds.add(id));
+    });
+
+    return bills.map(b => ({
+        ...b.toObject(),
+        isLocked: lockedIds.has(b.billId)
+    }));
+}
+
 // GET /api/bills
 router.get('/', async (req, res) => {
     try {
@@ -108,18 +137,8 @@ router.get('/', async (req, res) => {
             if (req.query.to) filter.billDate.$lte = new Date(req.query.to);
         }
         const bills = await ShopBill.find(filter).sort({ billDate: -1 });
-        sendSuccess(res, bills);
-    } catch (err) {
-        sendError(res, err.message);
-    }
-});
-
-// GET /api/bills/:billId
-router.get('/:billId', async (req, res) => {
-    try {
-        const bill = await ShopBill.findOne({ billId: req.params.billId.toUpperCase() });
-        if (!bill) return sendError(res, 'Bill not found', 404);
-        sendSuccess(res, bill);
+        const enriched = await attachLockStatus(bills);
+        sendSuccess(res, enriched);
     } catch (err) {
         sendError(res, err.message);
     }
@@ -129,7 +148,8 @@ router.get('/:billId', async (req, res) => {
 router.get('/shop/:shopId', async (req, res) => {
     try {
         const bills = await ShopBill.find({ shopId: req.params.shopId.toUpperCase() }).sort({ billDate: -1 });
-        sendSuccess(res, bills);
+        const enriched = await attachLockStatus(bills);
+        sendSuccess(res, enriched);
     } catch (err) {
         sendError(res, err.message);
     }
@@ -139,7 +159,50 @@ router.get('/shop/:shopId', async (req, res) => {
 router.get('/route/:routeId', async (req, res) => {
     try {
         const bills = await ShopBill.find({ routeId: req.params.routeId.toUpperCase() }).sort({ billDate: -1 });
-        sendSuccess(res, bills);
+        const enriched = await attachLockStatus(bills);
+        sendSuccess(res, enriched);
+    } catch (err) {
+        sendError(res, err.message);
+    }
+});
+
+// PATCH /api/bills/:billId/route - Update a bill's route
+router.patch('/:billId/route', async (req, res) => {
+    try {
+        const { routeId } = req.body;
+        if (!routeId) return sendError(res, 'Route ID is required', 400);
+
+        const bill = await ShopBill.findOne({ billId: req.params.billId.toUpperCase() });
+        if (!bill) return sendError(res, 'Bill not found', 404);
+
+        // Prevent changing route if the bill is already part of a Route Bill
+        const existingRouteBill = await RouteBill.findOne({ shopBillIds: bill.billId });
+        if (existingRouteBill) {
+            return sendError(res, 'Cannot change route. This bill has already been processed in a Route Bill.', 400);
+        }
+
+        const Route = require('../models/Route');
+        const routeDoc = await Route.findOne({ routeId: routeId.toUpperCase() });
+        if (!routeDoc) return sendError(res, 'Route not found', 404);
+
+        bill.routeId = routeDoc.routeId;
+        bill.routeName = routeDoc.routeName;
+        await bill.save();
+
+        const enriched = await attachLockStatus(bill);
+        sendSuccess(res, enriched, `Bill route updated to ${routeDoc.routeName}`);
+    } catch (err) {
+        sendError(res, err.message);
+    }
+});
+
+// GET /api/bills/:billId (Keep this last to prevent masking other routes)
+router.get('/:billId', async (req, res) => {
+    try {
+        const bill = await ShopBill.findOne({ billId: req.params.billId.toUpperCase() });
+        if (!bill) return sendError(res, 'Bill not found', 404);
+        const enriched = await attachLockStatus(bill);
+        sendSuccess(res, enriched);
     } catch (err) {
         sendError(res, err.message);
     }
