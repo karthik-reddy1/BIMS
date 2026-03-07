@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Building2, X, MapPin, Phone, Route, Receipt, TextSelect, IndianRupee, HandCoins } from "lucide-react"
+import { Building2, X, MapPin, Phone, Route, Receipt, TextSelect, IndianRupee, HandCoins, Plus } from "lucide-react"
 import {
     Dialog,
     DialogContent,
@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { BillDetailModal } from "@/components/billing/bill-detail-modal"
+import { CreateBillDialog } from "@/components/billing/create-bill-dialog"
 import api from "@/lib/api"
 import type { ApiShop, ApiShopBill, ApiProduct } from "@/lib/types"
 
@@ -28,6 +29,7 @@ export function ShopDetailModal({ shop, open, onOpenChange, onPaymentComplete }:
     const [loading, setLoading] = useState(true)
     const [productsMap, setProductsMap] = useState<Record<string, ApiProduct>>({})
     const [viewBill, setViewBill] = useState<ApiShopBill | null>(null)
+    const [createBillOpen, setCreateBillOpen] = useState(false)
 
     // Manual payment state
     const [isPaying, setIsPaying] = useState(false)
@@ -186,9 +188,14 @@ export function ShopDetailModal({ shop, open, onOpenChange, onPaymentComplete }:
 
                     {/* Bill History */}
                     <div>
-                        <h3 className="text-lg font-bold text-foreground mb-4 flex items-center gap-2">
-                            <Receipt className="h-5 w-5" /> Recent Bill History
-                        </h3>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                                <Receipt className="h-5 w-5" /> Recent Bill History
+                            </h3>
+                            <Button size="sm" onClick={() => setCreateBillOpen(true)} className="bg-primary text-primary-foreground">
+                                <Plus className="h-4 w-4 mr-1" /> New Bill
+                            </Button>
+                        </div>
 
                         {loading ? (
                             <div className="space-y-3">
@@ -252,11 +259,26 @@ export function ShopDetailModal({ shop, open, onOpenChange, onPaymentComplete }:
                     open={!!viewBill}
                     onOpenChange={(o) => { if (!o) setViewBill(null) }}
                     onBillUpdate={() => {
-                        fetchShopDetails(shop.shopId)
+                        api.get<ApiShopBill[]>(`/bills/shop/${shop.shopId}`)
+                            .then(res => setBills(res.data))
+                            .catch(console.error)
                         setViewBill(null)
                     }}
                 />
             )}
+
+            {/* Create Bill Dialog */}
+            <CreateBillDialog
+                open={createBillOpen}
+                onOpenChange={setCreateBillOpen}
+                initialShopId={shop.shopId}
+                onSaved={() => {
+                    // Refetch bills after a new bill is created
+                    api.get<ApiShopBill[]>(`/bills/shop/${shop.shopId}`)
+                        .then(res => setBills(res.data))
+                        .catch(console.error)
+                }}
+            />
         </Dialog>
     )
 }

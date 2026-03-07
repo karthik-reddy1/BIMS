@@ -34,7 +34,7 @@ export function EditProductDialog({
     onOpenChange: (open: boolean) => void
     onSaved?: () => void
 }) {
-    const [productGroup, setProductGroup] = useState("")
+    const [productName, setProductName] = useState("")
     const [newGroupMode, setNewGroupMode] = useState(false)
     const [existingGroups, setExistingGroups] = useState<string[]>([])
     const [existingCompanies, setExistingCompanies] = useState<ApiCompany[]>([])
@@ -44,15 +44,17 @@ export function EditProductDialog({
     const [bottlesPerCase, setBottlesPerCase] = useState("")
     const [filledCases, setFilledCases] = useState("")
     const [filledLoose, setFilledLoose] = useState("")
-    const [emptyGood, setEmptyGood] = useState("")
+    const [emptyGoodCases, setEmptyGoodCases] = useState("")
+    const [emptyGoodLoose, setEmptyGoodLoose] = useState("")
     const [emptyBroken, setEmptyBroken] = useState("")
+    const [brokenPrice, setBrokenPrice] = useState("")
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     // Prefill when product changes
     useEffect(() => {
         if (!product) return
-        setProductGroup(product.productGroup || product.productName || "")
+        setProductName(product.productName || "")
         setNewGroupMode(false)
         setBrand(product.brand || "")
         setMrp(String(product.mrp ?? ""))
@@ -60,18 +62,24 @@ export function EditProductDialog({
         setBottlesPerCase(String(product.bottlesPerCase ?? ""))
         setFilledCases(String(product.filledStock?.cases ?? 0))
         setFilledLoose(String(product.filledStock?.looseBottles ?? 0))
-        setEmptyGood(String(product.emptyStock?.good ?? 0))
+
+        const bpc = product.bottlesPerCase || 1
+        const totalGood = product.emptyStock?.good ?? 0
+        setEmptyGoodCases(String(Math.floor(totalGood / bpc)))
+        setEmptyGoodLoose(String(totalGood % bpc))
+
         setEmptyBroken(String(product.emptyStock?.broken ?? 0))
+        setBrokenPrice(String(product.brokenPrice ?? ""))
         setError(null)
     }, [product])
 
     // Fetch existing groups and companies from API when dialog opens
     useEffect(() => {
         if (!open) return
-        api.get<{ productGroup?: string; productName: string }[]>("/products")
+        api.get<{ productName: string }[]>("/products")
             .then((res) => {
                 const groups = Array.from(
-                    new Set(res.data.map((p) => p.productGroup || p.productName).filter(Boolean))
+                    new Set(res.data.map((p) => p.productName).filter(Boolean))
                 ).sort() as string[]
                 setExistingGroups(groups)
             })
@@ -90,7 +98,7 @@ export function EditProductDialog({
 
             const body: Record<string, unknown> = {
                 brand: brand.trim() || product.brand,
-                productGroup: productGroup.trim() || product.productName,
+                productName: productName.trim() || product.productName,
                 mrp: Number(mrp),
                 casePrice: Number(casePrice),
                 bottlesPerCase: Number(bottlesPerCase),
@@ -103,9 +111,10 @@ export function EditProductDialog({
 
             if (product.isReturnable) {
                 body.emptyStock = {
-                    good: Number(emptyGood) || 0,
+                    good: (Number(emptyGoodCases) || 0) * Number(bottlesPerCase) + (Number(emptyGoodLoose) || 0),
                     broken: Number(emptyBroken) || 0,
                 }
+                if (brokenPrice !== "") body.brokenPrice = Number(brokenPrice)
             }
 
             await api.put(`/products/${product.productId}`, body)
@@ -132,24 +141,24 @@ export function EditProductDialog({
                         <p className="text-sm text-destructive bg-destructive/5 rounded-lg px-3 py-2">{error}</p>
                     )}
 
-                    {/* Product Group */}
+                    {/* Product Name (group identifier) */}
                     <div className="flex flex-col gap-2">
                         <Label className="text-foreground">
-                            Product Group{" "}
+                            Product Name{" "}
                             <span className="text-xs text-muted-foreground">(groups variants on Products page)</span>
                         </Label>
                         {newGroupMode ? (
                             <div className="flex gap-2">
                                 <Input
-                                    value={productGroup}
-                                    onChange={(e) => setProductGroup(e.target.value)}
-                                    placeholder="Type new group name"
+                                    value={productName}
+                                    onChange={(e) => setProductName(e.target.value)}
+                                    placeholder="Type new product name"
                                     className="bg-white/80 border-border flex-1"
                                     autoFocus
                                 />
                                 <Button
                                     variant="outline" size="sm"
-                                    onClick={() => { setNewGroupMode(false); setProductGroup(product?.productGroup || "") }}
+                                    onClick={() => { setNewGroupMode(false); setProductName(product?.productName || "") }}
                                     className="shrink-0"
                                 >
                                     ✕
@@ -157,21 +166,21 @@ export function EditProductDialog({
                             </div>
                         ) : (
                             <Select
-                                value={productGroup}
+                                value={productName}
                                 onValueChange={(v) => {
-                                    if (v === "__new__") { setNewGroupMode(true); setProductGroup("") }
-                                    else setProductGroup(v)
+                                    if (v === "__new__") { setNewGroupMode(true); setProductName("") }
+                                    else setProductName(v)
                                 }}
                             >
                                 <SelectTrigger className="bg-white/80 border-border">
-                                    <SelectValue placeholder="Select group…" />
+                                    <SelectValue placeholder="Select product name…" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {existingGroups.map((g) => (
                                         <SelectItem key={g} value={g}>{g}</SelectItem>
                                     ))}
                                     <SelectItem value="__new__" className="text-primary font-medium">
-                                        ＋ New group…
+                                        ＋ New product name…
                                     </SelectItem>
                                 </SelectContent>
                             </Select>
@@ -239,15 +248,24 @@ export function EditProductDialog({
                     {product?.isReturnable && (
                         <div>
                             <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-1">Empty Stock</p>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-4 mb-4">
                                 <div className="flex flex-col gap-2">
-                                    <Label className="text-foreground">Good Empties</Label>
-                                    <Input type="number" value={emptyGood} onChange={(e) => setEmptyGood(e.target.value)} className="bg-white/80 border-border" />
+                                    <Label className="text-foreground">Good Empties - Cases</Label>
+                                    <Input type="number" value={emptyGoodCases} onChange={(e) => setEmptyGoodCases(e.target.value)} className="bg-white/80 border-border" />
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <Label className="text-foreground">Broken Empties</Label>
-                                    <Input type="number" value={emptyBroken} onChange={(e) => setEmptyBroken(e.target.value)} className="bg-white/80 border-border" />
+                                    <Label className="text-foreground">Good Empties - Loose</Label>
+                                    <Input type="number" value={emptyGoodLoose} onChange={(e) => setEmptyGoodLoose(e.target.value)} className="bg-white/80 border-border" />
                                 </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <Label className="text-foreground">Broken Empties (Loose Bottles)</Label>
+                                <Input type="number" value={emptyBroken} onChange={(e) => setEmptyBroken(e.target.value)} className="bg-white/80 border-border" />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <Label className="text-foreground">Price per Broken Bottle (₹)</Label>
+                                <Input type="number" value={brokenPrice} onChange={(e) => setBrokenPrice(e.target.value)} placeholder="e.g. 3" className="bg-white/80 border-border" />
+                                <p className="text-[10px] text-muted-foreground">Credit given when customer returns a broken bottle</p>
                             </div>
                         </div>
                     )}

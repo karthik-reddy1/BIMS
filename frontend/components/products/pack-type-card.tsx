@@ -1,12 +1,23 @@
 "use client"
 
 import { useState } from "react"
-import { Edit2 } from "lucide-react"
+import { Edit2, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { EditProductDialog } from "@/components/products/edit-product-dialog"
 import { RgbVariantModal } from "@/components/products/rgb-variant-modal"
 import type { ApiProduct } from "@/lib/types"
+import api from "@/lib/api"
 
 const PACK_COLORS: Record<string, { bg: string; text: string; border: string }> = {
     RGB: { bg: "bg-success/10", text: "text-success", border: "border-success/20" },
@@ -38,8 +49,24 @@ export function PackTypeCard({
 }) {
     const [editProduct, setEditProduct] = useState<ApiProduct | null>(null)
     const [rgbProduct, setRgbProduct] = useState<ApiProduct | null>(null)
+    const [deleteProduct, setDeleteProduct] = useState<ApiProduct | null>(null)
+    const [deleting, setDeleting] = useState(false)
     const isRgb = packType === "RGB"
     const colors = PACK_COLORS[packType] ?? { bg: "bg-muted", text: "text-foreground", border: "border-border" }
+
+    const handleDelete = async () => {
+        if (!deleteProduct) return
+        try {
+            setDeleting(true)
+            await api.delete(`/products/${deleteProduct.productId}`)
+            setDeleteProduct(null)
+            onRefresh()
+        } catch {
+            // keep dialog open on error
+        } finally {
+            setDeleting(false)
+        }
+    }
 
     return (
         <>
@@ -59,7 +86,7 @@ export function PackTypeCard({
                 {/* Variant rows */}
                 <div className="flex flex-col gap-2">
                     {products.map((p) => {
-                        const pct = Math.min((p.filledStock.totalBottles / 300) * 100, 100)
+                        const pct = Math.min((p.filledStock.totalBottles / (p.bottlesPerCase * 100)) * 100, 100)
                         return (
                             <div
                                 key={p.productId}
@@ -69,7 +96,10 @@ export function PackTypeCard({
                                     <span className="text-sm font-semibold text-foreground">{p.size}</span>
                                     <div className="flex items-center gap-1.5">
                                         <span className={`text-xs font-medium ${stockTextColor(p.filledStock.totalBottles)}`}>
-                                            {p.filledStock.totalBottles} btl ({p.filledStock.cases} cs)
+                                            {p.filledStock.cases > 0 && p.filledStock.looseBottles > 0
+                                                ? `${p.filledStock.cases}C + ${p.filledStock.looseBottles}B`
+                                                : p.filledStock.cases > 0 ? `${p.filledStock.cases}C`
+                                                    : `${p.filledStock.looseBottles}B`}
                                         </span>
 
                                         {/* RGB: "Details" button */}
@@ -84,7 +114,7 @@ export function PackTypeCard({
                                             </Button>
                                         )}
 
-                                        {/* Edit button for every variant */}
+                                        {/* Edit */}
                                         <Button
                                             variant="ghost"
                                             size="icon"
@@ -92,6 +122,16 @@ export function PackTypeCard({
                                             onClick={() => setEditProduct(p)}
                                         >
                                             <Edit2 className="h-3 w-3" />
+                                        </Button>
+
+                                        {/* Delete */}
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                            onClick={() => setDeleteProduct(p)}
+                                        >
+                                            <Trash2 className="h-3 w-3" />
                                         </Button>
                                     </div>
                                 </div>
@@ -128,6 +168,29 @@ export function PackTypeCard({
                     onRefresh={() => { setRgbProduct(null); onRefresh() }}
                 />
             )}
+
+            {/* Delete confirmation */}
+            <AlertDialog open={!!deleteProduct} onOpenChange={(o) => { if (!o) setDeleteProduct(null) }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete {deleteProduct?.productName} {deleteProduct?.size}?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete this product variant. Any past bills or purchases that reference it
+                            will still exist but may show missing product names. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={handleDelete}
+                            disabled={deleting}
+                        >
+                            {deleting ? "Deleting…" : "Delete"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     )
 }

@@ -9,7 +9,8 @@ const BillItemSchema = new mongoose.Schema({
     mrp: { type: Number, required: true },
     itemTotal: { type: Number, default: 0 },              // auto: quantity × mrp
     isReturnable: { type: Boolean, default: false },
-    returnablesOwed: { type: Number, default: 0 }         // = quantity for RGB
+    returnablesOwed: { type: Number, default: 0 },         // = quantity for RGB
+    bottlesPerCase: { type: Number, default: 1 }
 }, { _id: false });
 
 const ShopBillSchema = new mongoose.Schema({

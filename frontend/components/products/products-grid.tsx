@@ -7,11 +7,11 @@ import { ProductGroupCard } from "@/components/products/product-group-card"
 import api from "@/lib/api"
 import type { ApiProduct } from "@/lib/types"
 
-// Group products by productGroup field (fall back to productName)
+// Group products by productName (productName IS the group — e.g. "Thumbsup")
 function groupProducts(products: ApiProduct[]): Map<string, ApiProduct[]> {
   const map = new Map<string, ApiProduct[]>()
   for (const p of products) {
-    const key = p.productGroup?.trim() || p.productName
+    const key = p.productName
     if (!map.has(key)) map.set(key, [])
     map.get(key)!.push(p)
   }

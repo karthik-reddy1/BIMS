@@ -55,7 +55,7 @@ export function MakePaymentDialog({
         : [...prev, purchaseId]
       const total = pendingPurchases
         .filter((p) => next.includes(p.purchaseId))
-        .reduce((sum, p) => sum + p.grandTotal, 0)
+        .reduce((sum, p) => sum + (p.grandTotal - (p.amountPaid || 0)), 0)
       setPaymentAmount(String(total))
       return next
     })
@@ -89,21 +89,18 @@ export function MakePaymentDialog({
           const purchase = pendingPurchases.find((p) => p.purchaseId === purchaseId)
           if (!purchase) continue
           await api.put(`/purchases/${purchaseId}/payment`, {
-            amount: purchase.grandTotal,
+            amount: purchase.grandTotal - (purchase.amountPaid || 0),
             paymentMode,
             paymentDate: new Date().toISOString(),
           })
         }
       } else {
-        // Partial payment on most recent pending purchase
-        const first = pendingPurchases[0]
-        if (first) {
-          await api.put(`/purchases/${first.purchaseId}/payment`, {
-            amount,
-            paymentMode,
-            paymentDate: new Date().toISOString(),
-          })
-        }
+        // Bulk distribute payment across unpaid purchases
+        await api.post(`/companies/${company.id}/payment`, {
+          amount,
+          paymentMode,
+          paymentDate: new Date().toISOString(),
+        })
       }
       onSaved?.()
       onOpenChange(false)

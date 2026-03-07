@@ -163,7 +163,7 @@ router.get('/profit-loss', async (req, res) => {
         const totalExpenses = purchaseCost + transportCost + brokenPenalty + routeExpenses;
 
         const products = await Product.find();
-        const inventoryValue = products.reduce((s, p) => s + (p.filledStock.totalBottles * p.mrp), 0);
+        const inventoryValue = products.reduce((s, p) => s + (p.filledStock.totalBottles * (p.casePrice / (p.bottlesPerCase || 1))), 0);
         const cashProfit = totalRevenue - totalExpenses;
 
         sendSuccess(res, {
@@ -256,18 +256,30 @@ router.get('/shop-statement/:shopId', async (req, res) => {
         const shop = await Shop.findOne({ shopId: req.params.shopId.toUpperCase() });
         if (!shop) return sendError(res, 'Shop not found', 404);
 
-        const [bills, returns] = await Promise.all([
-            ShopBill.find({ shopId: shop.shopId }).sort({ billDate: -1 }),
-            EmptiesReturn.find({ shopId: shop.shopId }).sort({ returnDate: -1 })
-        ]);
+        // Bills for this shop
+        const bills = await ShopBill.find({ shopId: shop.shopId }).sort({ billDate: -1 });
+
+        // Empties returned via route collections — pull from RouteBill.shopCollections
+        const routeBillsWithShop = await RouteBill.find({
+            'shopCollections.shopId': shop.shopId
+        }).lean();
+
+        // Extract just this shop's collections with their route date
+        const returns = routeBillsWithShop.map(rb => {
+            const col = rb.shopCollections.find(c => c.shopId === shop.shopId);
+            return {
+                routeBillId: rb.routeBillId,
+                routeDate: rb.routeDate,
+                cashCollected: col ? col.cashCollected : 0,
+                items: col ? col.items : []
+            };
+        });
 
         const totalBilled = bills.reduce((s, b) => s + b.grandTotal, 0);
-        const totalMoneyCollected = returns.reduce((s, r) => s + r.totalMoneyCollected, 0);
 
         sendSuccess(res, {
             shop: { shopId: shop.shopId, shopName: shop.shopName, routeId: shop.routeId, returnableProducts: shop.returnableProducts },
             billSummary: { totalBills: bills.length, totalBilled },
-            brokenMoneyCollected: totalMoneyCollected,
             bills,
             returns
         });

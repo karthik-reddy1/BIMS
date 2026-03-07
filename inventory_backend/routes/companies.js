@@ -62,4 +62,47 @@ router.delete('/:companyId', async (req, res) => {
     }
 });
 
+// POST /api/companies/:companyId/payment
+router.post('/:companyId/payment', async (req, res) => {
+    try {
+        const { amount } = req.body;
+        if (!amount || amount <= 0) return sendError(res, 'Invalid payment amount', 400);
+
+        const company = await Company.findOne({ companyId: req.params.companyId.toUpperCase() });
+        if (!company) return sendError(res, 'Company not found', 404);
+
+        // 1. Distribute payment across unpaid purchases (oldest first)
+        const CompanyPurchase = require('../models/CompanyPurchase');
+        const unpaidPurchases = await CompanyPurchase.find({
+            companyId: company.companyId,
+            $expr: { $gt: ["$grandTotal", { $ifNull: ["$amountPaid", 0] }] }
+        }).sort({ purchaseDate: 1 });
+
+        let remainingAmount = amount;
+        for (const purchase of unpaidPurchases) {
+            if (remainingAmount <= 0) break;
+
+            const due = purchase.grandTotal - (purchase.amountPaid || 0);
+            const applyAmount = Math.min(due, remainingAmount);
+
+            purchase.amountPaid = (purchase.amountPaid || 0) + applyAmount;
+            purchase.amountDue = Math.max(0, purchase.grandTotal - purchase.amountPaid);
+
+            if (purchase.amountDue === 0) purchase.paymentStatus = 'Paid';
+            else purchase.paymentStatus = 'Partial';
+
+            await purchase.save();
+            remainingAmount -= applyAmount;
+        }
+
+        // 2. Reduce the master outstanding amount
+        company.outstandingAmount = Math.max(0, (company.outstandingAmount || 0) - amount);
+        await company.save();
+
+        sendSuccess(res, company, `Payment of ₹${amount} recorded for ${company.companyName}`);
+    } catch (err) {
+        sendError(res, err.message);
+    }
+});
+
 module.exports = router;

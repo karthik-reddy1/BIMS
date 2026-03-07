@@ -88,9 +88,11 @@ router.post('/', async (req, res) => {
             const product = await Product.findOne({ productId: e.productId });
             if (!product || !product.isReturnable) continue;
 
-            // Decrease empty stock (good going back to company)
+            // Decrease empty stock in warehouse (good going back to company)
             product.emptyStock.good = Math.max(0, product.emptyStock.good - e.goodBottles);
-            // Decrease companyOwed by total returned
+            // Decrease broken empties too — broken bottles are also leaving our warehouse back to company
+            product.emptyStock.broken = Math.max(0, product.emptyStock.broken - e.brokenBottles);
+            // Decrease companyOwed by total returned (both good + broken reduce our debt)
             product.returnableAccounts.companyOwed = Math.max(0, product.returnableAccounts.companyOwed - e.totalReturned);
 
             // Update company returnable record

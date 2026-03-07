@@ -24,7 +24,7 @@ import { BillDetailModal } from "@/components/billing/bill-detail-modal"
 import api from "@/lib/api"
 import type { ApiRoute, ApiShopBill, ApiShop, ApiProduct } from "@/lib/types"
 
-// Track returnable empties per bill per product
+// Track returnable empties per SHOP per product (not per bill — prevents double-counting)
 type EmptiesState = Record<string, Record<string, { good: number; broken: number }>>
 
 export function RoutesContent() {
@@ -35,7 +35,9 @@ export function RoutesContent() {
   const [loadingBills, setLoadingBills] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [cashReceived, setCashReceived] = useState("")
-  const [shopCash, setShopCash] = useState<Record<string, string>>({})
+  const [shopCash, setShopCash] = useState<Record<string, string>>({}) // keyed by shopId
+  // Maps shopId → { shopName, totalDue, returnableProducts: {productId → qty} }
+  const [shopSummary, setShopSummary] = useState<Record<string, { shopName: string; totalDue: number; products: Record<string, { name: string; totalQty: number }> }>>({})
   const [routeExpenses, setRouteExpenses] = useState("")
   const [empties, setEmpties] = useState<EmptiesState>({})
   const [submitting, setSubmitting] = useState(false)
@@ -77,25 +79,47 @@ export function RoutesContent() {
   const loadRouteBills = async (routeId: string) => {
     try {
       setLoadingBills(true)
-      // Extract the filtered active bills directly from the loaded route
       const route = routes.find((r) => r.routeId === routeId)
       const todays = route?.activeBills || []
       setRouteBills(todays)
 
-      // Initialize empties and shopCash state
+      // Build per-SHOP state (not per-bill) to avoid double-counting
       const initEmpties: EmptiesState = {}
       const initShopCash: Record<string, string> = {}
+      const initShopSummary: Record<string, { shopName: string; totalDue: number; products: Record<string, { name: string; totalQty: number }> }> = {}
+
       for (const bill of todays) {
-        initShopCash[bill.billId] = ""
-        initEmpties[bill.billId] = {}
+        const shopId = bill.shopId
+        if (!initShopCash[shopId]) initShopCash[shopId] = ""
+        if (!initEmpties[shopId]) initEmpties[shopId] = {}
+        if (!initShopSummary[shopId]) {
+          initShopSummary[shopId] = {
+            shopName: bill.shopName,
+            totalDue: 0,
+            products: {}
+          }
+        }
+        // Accumulate outstanding for this shop across all its bills
+        initShopSummary[shopId].totalDue += bill.grandTotal || 0
+
+        // Merge returnable products across all bills for same shop
         for (const item of bill.items) {
           if (item.isReturnable) {
-            initEmpties[bill.billId][item.productId] = { good: 0, broken: 0 }
+            if (!initEmpties[shopId][item.productId]) {
+              initEmpties[shopId][item.productId] = { good: 0, broken: 0 }
+            }
+            // Track total qty sold per product per shop (across all bills)
+            if (!initShopSummary[shopId].products[item.productId]) {
+              initShopSummary[shopId].products[item.productId] = { name: item.productName, totalQty: 0 }
+            }
+            initShopSummary[shopId].products[item.productId].totalQty += item.quantity
           }
         }
       }
+
       setEmpties(initEmpties)
       setShopCash(initShopCash)
+      setShopSummary(initShopSummary)
     } catch {
       setRouteBills([])
     } finally {
@@ -103,12 +127,12 @@ export function RoutesContent() {
     }
   }
 
-  const updateEmpties = (billId: string, productId: string, field: "good" | "broken", value: number) => {
+  const updateEmpties = (shopId: string, productId: string, field: "good" | "broken", value: number) => {
     setEmpties((prev) => ({
       ...prev,
-      [billId]: {
-        ...prev[billId],
-        [productId]: { ...(prev[billId]?.[productId] ?? { good: 0, broken: 0 }), [field]: value },
+      [shopId]: {
+        ...prev[shopId],
+        [productId]: { ...(prev[shopId]?.[productId] ?? { good: 0, broken: 0 }), [field]: value },
       },
     }))
   }
@@ -153,7 +177,8 @@ export function RoutesContent() {
 
   const activeRoute = routes.find((r) => r.routeId === activeRouteId)
   const totalAmount = routeBills.reduce((s, b) => s + (b.grandTotal ?? 0), 0)
-  const calculatedCashReceived = routeBills.reduce((sum, bill) => sum + (parseFloat(shopCash[bill.billId]) || 0), 0)
+  // Sum cash across shops (keyed by shopId now)
+  const calculatedCashReceived = Object.values(shopCash).reduce((sum, v) => sum + (parseFloat(v) || 0), 0)
   const cash = calculatedCashReceived || 0
   const expenses = parseFloat(routeExpenses) || 0
   const diff = cash - expenses - totalAmount
@@ -168,44 +193,36 @@ export function RoutesContent() {
         routeName: activeRoute?.routeName,
         routeDate: new Date().toISOString(),
         shopBillIds: routeBills.map(b => b.billId),
-        stockLoaded: [] // we aren't tracking vehicle stock in this UI yet
+        stockLoaded: []
       })
 
       const routeBillId = rbRes.data.routeBillId
 
-      // 2. Prepare the shop collections array for completion
-      const shopCollections = []
-      for (const bill of routeBills) {
-        const cashPaid = parseFloat(shopCash[bill.billId]) || 0
-        const billEmpties = empties[bill.billId]
-        const items: { productId: string; goodBottles: number; brokenBottles: number }[] = []
-        if (billEmpties) {
-          Object.entries(billEmpties)
-            .filter(([, vals]) => vals.good > 0 || vals.broken > 0)
-            .forEach(([productId, vals]) => {
-              items.push({
-                productId,
-                goodBottles: vals.good,
-                brokenBottles: vals.broken,
-              })
-            })
-        }
+      // 2. Build ONE shopCollection entry per shop (not per bill)
+      // This prevents double-deduction of outstanding when a shop has multiple bills
+      const shopCollections = Object.entries(shopSummary).map(([shopId, summary]) => {
+        const cashPaid = parseFloat(shopCash[shopId]) || 0
+        const shopEmpties = empties[shopId] || {}
+        const items = Object.entries(shopEmpties)
+          .filter(([, vals]) => vals.good > 0 || vals.broken > 0)
+          .map(([productId, vals]) => ({
+            productId,
+            goodBottles: vals.good,
+            brokenBottles: vals.broken,
+          }))
 
-        if (cashPaid > 0 || items.length > 0) {
-          shopCollections.push({
-            shopId: bill.shopId,
-            cashCollected: cashPaid,
-            items
-          })
-        }
-      }
+        return { shopId, cashCollected: cashPaid, items }
+      }).filter(sc => sc.cashCollected > 0 || sc.items.length > 0)
 
-      // 3. Complete the route bill with cash, expenses, and collections
+      // 3. Complete the route bill
       await api.put(`/route-bills/${routeBillId}/complete`, {
         cashReceived: calculatedCashReceived,
         routeExpenses: parseFloat(routeExpenses) || 0,
         shopCollections
       })
+
+      // 4. Refresh routes so processed bills are removed from active list
+      await fetchRoutes()
 
     } catch (err) {
       console.error("Failed to complete route", err)
@@ -424,30 +441,25 @@ export function RoutesContent() {
                 </div>
               </div>
 
-              {/* Shop Settlements */}
               <div>
                 <h3 className="font-semibold text-foreground mb-4">Shop Settlements (Cash & Empties)</h3>
                 <Accordion type="single" collapsible className="flex flex-col gap-2">
-                  {routeBills.map((bill) => {
-                    const returnableItems = bill.items.filter((i) => i.isReturnable)
-                    const shop = shopsMap[bill.shopId]
-                    const previousDebt = shop ? Math.max(0, shop.outstandingAmount - (bill.grandTotal || 0)) : 0
+                  {Object.entries(shopSummary).map(([shopId, summary]) => {
+                    const shop = shopsMap[shopId]
+                    const hasReturnables = Object.keys(summary.products).length > 0
 
                     return (
                       <AccordionItem
-                        key={bill.billId}
-                        value={bill.billId}
+                        key={shopId}
+                        value={shopId}
                         className="bg-muted/50 rounded-lg border border-border px-4"
                       >
                         <AccordionTrigger className="text-sm font-medium text-foreground hover:no-underline py-3">
                           <div className="flex justify-between items-center w-full pr-4">
-                            <span>{bill.shopName}</span>
-                            <div className="flex flex-col items-end gap-0.5 mt-1 sm:mt-0 sm:flex-row sm:items-center sm:gap-4">
-                              {previousDebt > 0 && (
-                                <span className="text-xs text-destructive font-semibold">Legacy: ₹{previousDebt.toLocaleString("en-IN")}</span>
-                              )}
-                              <span className="text-sm font-bold text-foreground">Due: ₹{(shop?.outstandingAmount || bill.grandTotal || 0).toLocaleString("en-IN")}</span>
-                            </div>
+                            <span>{summary.shopName}</span>
+                            <span className="text-sm font-bold text-foreground">
+                              Due: ₹{(shop?.outstandingAmount ?? summary.totalDue).toLocaleString("en-IN")}
+                            </span>
                           </div>
                         </AccordionTrigger>
                         <AccordionContent className="pb-4 flex flex-col gap-6">
@@ -458,32 +470,32 @@ export function RoutesContent() {
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
                               <Input
                                 type="number"
-                                value={shopCash[bill.billId] ?? ""}
-                                onChange={(e) => setShopCash(prev => ({ ...prev, [bill.billId]: e.target.value }))}
+                                value={shopCash[shopId] ?? ""}
+                                onChange={(e) => setShopCash(prev => ({ ...prev, [shopId]: e.target.value }))}
                                 className="pl-7 bg-white/80 border-border"
                                 placeholder="0"
                               />
                             </div>
                           </div>
 
-                          {/* Empties Returned Inputs */}
-                          {returnableItems.length > 0 && (
+                          {/* Empties Returned — grouped per shop across ALL their bills */}
+                          {hasReturnables && (
                             <div className="flex flex-col gap-3">
                               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Empties Returned</Label>
-                              {returnableItems.map((item) => {
-                                const e = empties[bill.billId]?.[item.productId] ?? { good: 0, broken: 0 }
+                              {Object.entries(summary.products).map(([productId, prod]) => {
+                                const e = empties[shopId]?.[productId] ?? { good: 0, broken: 0 }
                                 return (
-                                  <div key={item.productId} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2">
-                                    <span className="text-sm font-medium text-foreground min-w-[120px]">{item.productName}:</span>
+                                  <div key={productId} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2">
+                                    <span className="text-sm font-medium text-foreground min-w-[120px]">{prod.name}:</span>
                                     <div className="flex items-center gap-4">
                                       <div className="flex items-center gap-1.5">
                                         <Label className="text-xs text-muted-foreground">Good</Label>
                                         <Input
                                           type="number"
                                           min={0}
-                                          max={item.quantity}
+                                          max={prod.totalQty}
                                           value={e.good}
-                                          onChange={(ev) => updateEmpties(bill.billId, item.productId, "good", parseInt(ev.target.value) || 0)}
+                                          onChange={(ev) => updateEmpties(shopId, productId, "good", parseInt(ev.target.value) || 0)}
                                           className="w-16 h-8 text-sm bg-white/80 border-border"
                                         />
                                       </div>
@@ -492,13 +504,13 @@ export function RoutesContent() {
                                         <Input
                                           type="number"
                                           min={0}
-                                          max={item.quantity}
+                                          max={prod.totalQty}
                                           value={e.broken}
-                                          onChange={(ev) => updateEmpties(bill.billId, item.productId, "broken", parseInt(ev.target.value) || 0)}
+                                          onChange={(ev) => updateEmpties(shopId, productId, "broken", parseInt(ev.target.value) || 0)}
                                           className="w-16 h-8 text-sm bg-white/80 border-border"
                                         />
                                       </div>
-                                      <span className="text-xs text-muted-foreground">of {item.quantity} sold</span>
+                                      <span className="text-xs text-muted-foreground">of {prod.totalQty} sold</span>
                                     </div>
                                   </div>
                                 )
@@ -510,7 +522,7 @@ export function RoutesContent() {
                     )
                   })}
                 </Accordion>
-                {routeBills.every((b) => b.items.every((i) => !i.isReturnable)) && (
+                {Object.values(shopSummary).every(s => Object.keys(s.products).length === 0) && (
                   <p className="text-sm text-muted-foreground mt-2">No returnable items on today's bills.</p>
                 )}
               </div>

@@ -36,8 +36,7 @@ export function AddProductDialog({
     onSaved?: () => void
 }) {
     const [productName, setProductName] = useState("")
-    const [productGroup, setProductGroup] = useState("")
-    const [newGroupMode, setNewGroupMode] = useState(false)   // true = typing a new group
+    const [newGroupMode, setNewGroupMode] = useState(false)   // true = typing a brand-new product name
     const [existingGroups, setExistingGroups] = useState<string[]>([])
     const [existingCompanies, setExistingCompanies] = useState<ApiCompany[]>([])
     const [brand, setBrand] = useState("")
@@ -51,19 +50,21 @@ export function AddProductDialog({
     // Initial Stock fields
     const [filledCases, setFilledCases] = useState("")
     const [filledLoose, setFilledLoose] = useState("")
-    const [emptyGood, setEmptyGood] = useState("")
+    const [emptyGoodCases, setEmptyGoodCases] = useState("")
+    const [emptyGoodLoose, setEmptyGoodLoose] = useState("")
     const [emptyBroken, setEmptyBroken] = useState("")
+    const [brokenPrice, setBrokenPrice] = useState("")
 
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    // Fetch existing product groups & companies when dialog opens
+    // Fetch existing product names (= groups) & companies when dialog opens
     useEffect(() => {
         if (!open) return
-        api.get<{ productGroup?: string; productName: string }[]>("/products")
+        api.get<{ productName: string }[]>("/products")
             .then((res) => {
                 const groups = Array.from(
-                    new Set(res.data.map((p) => p.productGroup || p.productName).filter(Boolean))
+                    new Set(res.data.map((p) => p.productName).filter(Boolean))
                 ).sort() as string[]
                 setExistingGroups(groups)
             }).catch(() => { })
@@ -75,7 +76,6 @@ export function AddProductDialog({
 
     const reset = () => {
         setProductName("")
-        setProductGroup("")
         setNewGroupMode(false)
         setBrand("")
         setSize("")
@@ -86,8 +86,10 @@ export function AddProductDialog({
         setIsReturnable(false)
         setFilledCases("")
         setFilledLoose("")
-        setEmptyGood("")
+        setEmptyGoodCases("")
+        setEmptyGoodLoose("")
         setEmptyBroken("")
+        setBrokenPrice("")
         setError(null)
     }
 
@@ -116,7 +118,6 @@ export function AddProductDialog({
                 productId,
                 brand: brand.trim() || productName.trim(),
                 productName: productName.trim(),
-                productGroup: productGroup.trim() || productName.trim(),
                 size: size.trim(),
                 packType,
                 isReturnable: packType === "RGB" ? true : isReturnable,
@@ -131,10 +132,12 @@ export function AddProductDialog({
             }
 
             if (packType === "RGB" || isReturnable) {
+                const bpc = Number(bottlesPerCase) || 1
                 payload.emptyStock = {
-                    good: Number(emptyGood) || 0,
+                    good: (Number(emptyGoodCases) || 0) * bpc + (Number(emptyGoodLoose) || 0),
                     broken: Number(emptyBroken) || 0,
                 }
+                if (brokenPrice) payload.brokenPrice = Number(brokenPrice)
             }
 
             await api.post("/products", payload)
@@ -160,16 +163,52 @@ export function AddProductDialog({
                         <p className="text-sm text-destructive bg-destructive/5 rounded-lg px-3 py-2">{error}</p>
                     )}
 
-                    {/* Product Name + Brand + Group */}
+                    {/* Product Name (group picker) + Brand */}
                     <div className="grid grid-cols-2 gap-4">
                         <div className="flex flex-col gap-2">
-                            <Label className="text-foreground">Product Name <span className="text-destructive">*</span></Label>
-                            <Input
-                                value={productName}
-                                onChange={(e) => { setProductName(e.target.value); if (!productGroup) setProductGroup(e.target.value) }}
-                                placeholder="e.g. Thumbsup"
-                                className="bg-white/80 border-border"
-                            />
+                            <Label className="text-foreground">
+                                Product Name <span className="text-destructive">*</span>
+                                <span className="text-xs text-muted-foreground ml-1">(groups variants)</span>
+                            </Label>
+                            {newGroupMode ? (
+                                <div className="flex gap-2">
+                                    <Input
+                                        value={productName}
+                                        onChange={(e) => setProductName(e.target.value)}
+                                        placeholder="Type new product name…"
+                                        className="bg-white/80 border-border flex-1"
+                                        autoFocus
+                                    />
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => { setNewGroupMode(false); setProductName("") }}
+                                        className="shrink-0"
+                                    >
+                                        ✕
+                                    </Button>
+                                </div>
+                            ) : (
+                                <Select
+                                    value={productName}
+                                    onValueChange={(v) => {
+                                        if (v === "__new__") { setNewGroupMode(true); setProductName("") }
+                                        else setProductName(v)
+                                    }}
+                                >
+                                    <SelectTrigger className="bg-white/80 border-border">
+                                        <SelectValue placeholder="Select or create product…" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {existingGroups.map((g) => (
+                                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                                        ))}
+                                        <SelectItem value="__new__" className="text-primary font-medium">
+                                            ＋ New product name…
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            )}
                         </div>
                         <div className="flex flex-col gap-2">
                             <Label className="text-foreground">Brand (Company) <span className="text-destructive">*</span></Label>
@@ -186,48 +225,6 @@ export function AddProductDialog({
                                 </SelectContent>
                             </Select>
                         </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <Label className="text-foreground">Product Group <span className="text-xs text-muted-foreground">(groups variants on the Products page)</span></Label>
-                        {newGroupMode ? (
-                            <div className="flex gap-2">
-                                <Input
-                                    value={productGroup}
-                                    onChange={(e) => setProductGroup(e.target.value)}
-                                    placeholder="Type new group name"
-                                    className="bg-white/80 border-border flex-1"
-                                    autoFocus
-                                />
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => { setNewGroupMode(false); setProductGroup("") }}
-                                    className="shrink-0"
-                                >
-                                    ✕
-                                </Button>
-                            </div>
-                        ) : (
-                            <Select
-                                value={productGroup}
-                                onValueChange={(v) => {
-                                    if (v === "__new__") { setNewGroupMode(true); setProductGroup("") }
-                                    else setProductGroup(v)
-                                }}
-                            >
-                                <SelectTrigger className="bg-white/80 border-border">
-                                    <SelectValue placeholder={productName || "Select or create group…"} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {existingGroups.map((g) => (
-                                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                                    ))}
-                                    <SelectItem value="__new__" className="text-primary font-medium">
-                                        ＋ New group…
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                        )}
                     </div>
 
                     {/* Pack Type + Size */}
@@ -328,26 +325,55 @@ export function AddProductDialog({
                             </div>
 
                             {(packType === "RGB" || isReturnable) && (
-                                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
-                                    <div className="flex flex-col gap-2">
-                                        <Label className="text-xs text-muted-foreground">Empty Good Bottles</Label>
-                                        <Input
-                                            type="number"
-                                            value={emptyGood}
-                                            onChange={(e) => setEmptyGood(e.target.value)}
-                                            placeholder="0"
-                                            className="bg-white/80"
-                                        />
+                                <div className="flex flex-col gap-4 pt-4 border-t border-border">
+                                    <Label className="text-foreground text-sm font-semibold">Empty Stock</Label>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="flex flex-col gap-2">
+                                            <Label className="text-xs text-muted-foreground">Good Empties - Cases</Label>
+                                            <Input
+                                                type="number"
+                                                value={emptyGoodCases}
+                                                onChange={(e) => setEmptyGoodCases(e.target.value)}
+                                                placeholder="0"
+                                                className="bg-white/80"
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            <Label className="text-xs text-muted-foreground">Good Empties - Loose</Label>
+                                            <Input
+                                                type="number"
+                                                value={emptyGoodLoose}
+                                                onChange={(e) => setEmptyGoodLoose(e.target.value)}
+                                                placeholder="0"
+                                                className="bg-white/80"
+                                            />
+                                        </div>
                                     </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="flex flex-col gap-2 col-span-2">
+                                            <Label className="text-xs text-muted-foreground">Broken Empties (Loose Bottles)</Label>
+                                            <Input
+                                                type="number"
+                                                value={emptyBroken}
+                                                onChange={(e) => setEmptyBroken(e.target.value)}
+                                                placeholder="0"
+                                                className="bg-white/80"
+                                            />
+                                        </div>
+                                    </div>
+
                                     <div className="flex flex-col gap-2">
-                                        <Label className="text-xs text-muted-foreground">Empty Broken Bottles</Label>
+                                        <Label className="text-xs text-muted-foreground">Price per Broken Bottle (₹)</Label>
                                         <Input
                                             type="number"
-                                            value={emptyBroken}
-                                            onChange={(e) => setEmptyBroken(e.target.value)}
-                                            placeholder="0"
+                                            value={brokenPrice}
+                                            onChange={(e) => setBrokenPrice(e.target.value)}
+                                            placeholder="e.g. 3"
                                             className="bg-white/80"
                                         />
+                                        <p className="text-[10px] text-muted-foreground">Credit given when customer returns a broken bottle</p>
                                     </div>
                                 </div>
                             )}

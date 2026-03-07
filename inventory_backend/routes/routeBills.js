@@ -64,8 +64,6 @@ router.put('/:routeBillId/complete', async (req, res) => {
         if (routeBill.status === 'Completed') return sendError(res, 'Route bill already completed', 400);
 
         // ===== Process Collections per shop =====
-        const retCount = await EmptiesReturn.countDocuments();
-        let retCounter = retCount;
         for (const shopCollection of (shopCollections || [])) {
             const shop = await Shop.findOne({ shopId: shopCollection.shopId.toUpperCase() });
             if (!shop) continue;
@@ -74,31 +72,30 @@ router.put('/:routeBillId/complete', async (req, res) => {
             const cashPaid = parseFloat(shopCollection.cashCollected) || 0;
             shop.outstandingAmount = Math.max(0, shop.outstandingAmount - cashPaid);
 
-            const items = [];
             for (const item of (shopCollection.items || [])) {
                 const product = await Product.findOne({ productId: item.productId });
                 if (!product || !product.isReturnable) continue;
 
-                const shopBalance = shop.returnableProducts.find(r => r.productId === item.productId);
-                items.push({
-                    productId: item.productId,
-                    productName: product.productName,
-                    expectedBottles: shopBalance ? shopBalance.emptiesOwed : 0,
-                    goodBottles: item.goodBottles || 0,
-                    brokenBottles: item.brokenBottles || 0
-                });
+                const goodReturned = item.goodBottles || 0;
+                const brokenReturned = item.brokenBottles || 0;
+                const totalReturned = goodReturned + brokenReturned;
 
-                // Update product empty stock
-                product.emptyStock.good += (item.goodBottles || 0);
-                // Decrease product shopsOwed
-                const totalReturned = (item.goodBottles || 0) + (item.brokenBottles || 0);
+                // Good bottles come into our warehouse as good empties
+                product.emptyStock.good += goodReturned;
+                // Broken bottles come into our warehouse as broken empties
+                product.emptyStock.broken += brokenReturned;
+                // These bottles are now back in our warehouse → we owe fewer to the company
+                product.returnableAccounts.companyOwed = Math.max(0, product.returnableAccounts.companyOwed - totalReturned);
+                // Shops no longer owe us these bottles
                 product.returnableAccounts.shopsOwed = Math.max(0, product.returnableAccounts.shopsOwed - totalReturned);
+
+                // Update the shop's individual returnable balance
                 updateReturnableBalance(shop.returnableProducts, item.productId, product.productName, -totalReturned);
                 await product.save();
             }
             await shop.save();
 
-            // Create an EmptiesReturn document for each shop (REMOVED - Redundant as we have shopCollections in RouteBill)
+            // EmptiesReturn record creation removed — shopCollections in RouteBill serves as the record
         }
 
         // Update route bill

@@ -37,9 +37,22 @@ export function ItemSalesReport({ days }: ItemSalesReportProps) {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true)
-            const to = new Date()
-            const from = new Date()
-            from.setDate(to.getDate() - parseInt(days))
+            let from: Date, to: Date
+
+            if (days === "1") {
+                // Today: midnight → 23:59:59
+                from = new Date(); from.setHours(0, 0, 0, 0)
+                to = new Date(); to.setHours(23, 59, 59, 999)
+            } else if (days === "0") {
+                // Yesterday: previous day midnight → 23:59:59
+                from = new Date(); from.setDate(from.getDate() - 1); from.setHours(0, 0, 0, 0)
+                to = new Date(); to.setDate(to.getDate() - 1); to.setHours(23, 59, 59, 999)
+            } else {
+                // Rolling window: last N days
+                to = new Date()
+                from = new Date(); from.setDate(to.getDate() - parseInt(days))
+            }
+
             const res = await api.get<ItemSalesData>(
                 `/reports/item-sales?from=${from.toISOString()}&to=${to.toISOString()}`
             )

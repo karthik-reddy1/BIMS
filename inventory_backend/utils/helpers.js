@@ -1,3 +1,5 @@
+const Counter = require('../models/Counter');
+
 /**
  * Generate a sequential ID like PUR-001, BILL-023, etc.
  * @param {Model} Model - the mongoose model to count documents from
@@ -5,8 +7,24 @@
  * @param {string} field  - the ID field name e.g. 'purchaseId', 'billId'
  */
 const generateId = async (Model, prefix, field) => {
-    const count = await Model.countDocuments();
-    const num = String(count + 1).padStart(3, '0');
+    // 1. Try to atomic increment the counter
+    let counter = await Counter.findByIdAndUpdate(
+        prefix,
+        { $inc: { seq: 1 } },
+        { new: true } // Don't upsert yet, we need to check if it existed
+    );
+
+    // 2. If counter didn't exist, we must initialize it based on existing documents
+    if (!counter) {
+        // Fallback to counting existing documents (slow but only happens once per prefix)
+        const count = await Model.countDocuments();
+        counter = await Counter.create({
+            _id: prefix,
+            seq: count + 1
+        });
+    }
+
+    const num = String(counter.seq).padStart(3, '0');
     return `${prefix}-${num}`;
 };
 

@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Building2, Search } from "lucide-react"
+import { Building2, Search, Plus } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -17,12 +18,14 @@ import api from "@/lib/api"
 import type { ApiShop } from "@/lib/types"
 import { ShopCard } from "./shop-card"
 import { ShopDetailModal } from "./shop-detail-modal"
+import { AddShopDialog } from "./add-shop-dialog"
 
 export function ShopsContent() {
     const [shops, setShops] = useState<ApiShop[]>([])
     const [search, setSearch] = useState("")
     const [shopToDelete, setShopToDelete] = useState<ApiShop | null>(null)
     const [selectedShop, setSelectedShop] = useState<ApiShop | null>(null)
+    const [addOpen, setAddOpen] = useState(false)
 
     const fetchShops = () => {
         api.get<ApiShop[]>("/shops").then((res) => setShops(res.data)).catch(console.error)
@@ -57,6 +60,10 @@ export function ShopsContent() {
                     <h1 className="text-3xl font-bold tracking-tight text-foreground">Shops</h1>
                     <p className="text-muted-foreground mt-2">Manage your customers and track their balances</p>
                 </div>
+                <Button className="bg-primary text-primary-foreground hover:bg-primary/90" size="lg" onClick={() => setAddOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Shop
+                </Button>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4">
@@ -108,10 +115,25 @@ export function ShopsContent() {
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the shop
-                            <span className="font-semibold text-foreground"> {shopToDelete?.shopName} </span>
-                            and remove their data from the server.
+                        <AlertDialogDescription className="space-y-3">
+                            <p>
+                                This action cannot be undone. This will permanently delete the shop
+                                <span className="font-semibold text-foreground"> {shopToDelete?.shopName} </span>
+                                and remove their data from the server.
+                            </p>
+                            {shopToDelete && (shopToDelete.outstandingAmount > 0 || (shopToDelete.returnableProducts && shopToDelete.returnableProducts.some(r => r.emptiesOwed > 0))) && (
+                                <div className="bg-destructive/10 text-destructive p-3 rounded-md text-sm border border-destructive/20 mt-4">
+                                    <strong className="block mb-1">Warning: This shop still has pending balances!</strong>
+                                    <ul className="list-disc pl-5 space-y-1">
+                                        {shopToDelete.outstandingAmount > 0 && (
+                                            <li>Outstanding Cash: ₹{shopToDelete.outstandingAmount.toLocaleString("en-IN")}</li>
+                                        )}
+                                        {shopToDelete.returnableProducts?.filter(r => r.emptiesOwed > 0).map(r => (
+                                            <li key={r.productId}>{r.productName}: {r.emptiesOwed} returnable empties</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -122,6 +144,7 @@ export function ShopsContent() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            <AddShopDialog open={addOpen} onOpenChange={setAddOpen} onSaved={fetchShops} />
         </div>
     )
 }

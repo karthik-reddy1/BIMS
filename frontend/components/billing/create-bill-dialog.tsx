@@ -58,10 +58,12 @@ export function CreateBillDialog({
   open,
   onOpenChange,
   onSaved,
+  initialShopId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved?: () => void
+  initialShopId?: string
 }) {
   const [newShopMode, setNewShopMode] = useState(false)
   const [newShopName, setNewShopName] = useState("")
@@ -88,14 +90,24 @@ export function CreateBillDialog({
       setShops(s.data)
       setRoutes(r.data)
       setProducts(p.data)
+
+      // If an initial shop was passed, pre-select it
+      if (initialShopId) {
+        setShopId(initialShopId)
+        // Auto-select route if shop has one
+        const shop = s.data.find(sh => sh.shopId === initialShopId)
+        if (shop && shop.routeId) {
+          setRouteId(shop.routeId)
+        }
+      }
     }).catch(() => { })
-  }, [open])
+  }, [open, initialShopId])
 
   // ── Derived product hierarchies ───────────────────────────────────────────
 
   // All unique groups sorted
   const groups = useMemo(() => {
-    const set = new Set(products.map((p) => p.productGroup || p.productName))
+    const set = new Set(products.map((p) => p.productName))
     return Array.from(set).sort()
   }, [products])
 
@@ -103,7 +115,7 @@ export function CreateBillDialog({
   const packTypesForGroup = (group: string): ApiProduct["packType"][] => {
     const types = new Set<string>(
       products
-        .filter((p) => (p.productGroup || p.productName) === group)
+        .filter((p) => p.productName === group)
         .map((p) => p.packType)
     )
     return PACK_ORDER.filter((pt) => types.has(pt)) as ApiProduct["packType"][]
@@ -112,7 +124,7 @@ export function CreateBillDialog({
   // Sizes (products) for a group + packType
   const productsForGroupAndPack = (group: string, packType: string) =>
     products
-      .filter((p) => (p.productGroup || p.productName) === group && p.packType === packType)
+      .filter((p) => p.productName === group && p.packType === packType)
       .sort((a, b) => parseFloat(a.size) - parseFloat(b.size))
 
   // ── Item helpers ──────────────────────────────────────────────────────────
@@ -315,6 +327,7 @@ export function CreateBillDialog({
               ) : (
                 <Select
                   value={shopId}
+                  disabled={!!initialShopId}
                   onValueChange={(v) => {
                     if (v === "__new__") {
                       setNewShopMode(true)

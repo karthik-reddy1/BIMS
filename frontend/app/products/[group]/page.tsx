@@ -26,11 +26,11 @@ export default function ProductGroupPage({ params }: { params: Promise<{ group: 
             const slugify = (s: string) => s.toLowerCase().replace(/\s+/g, "-")
             const decoded = decodeURIComponent(groupSlug)
             const filtered = all.filter(
-                (p) => slugify(p.productGroup || p.productName) === decoded
+                (p) => slugify(p.productName) === decoded
             )
             setProducts(filtered)
             if (filtered.length > 0) {
-                setGroupName(filtered[0].productGroup || filtered[0].productName)
+                setGroupName(filtered[0].productName)
             }
         } catch {
             // silent
@@ -75,9 +75,9 @@ export default function ProductGroupPage({ params }: { params: Promise<{ group: 
                 </div>
             ) : byPackType.size === 0 ? (
                 <p className="text-center py-16 text-muted-foreground">
-                    No variants found for this product group.
+                    No variants found for this product name.
                     <br />
-                    <span className="text-sm">Use the Edit button on a product to set its productGroup to &quot;{groupName}&quot;</span>
+                    <span className="text-sm">Make sure the product name matches "{groupName}"</span>
                 </p>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
