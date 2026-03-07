@@ -12,10 +12,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CreateBillDialog } from "@/components/billing/create-bill-dialog"
 import { BillDetailModal, printBill } from "@/components/billing/bill-detail-modal"
 import api from "@/lib/api"
-import type { ApiShopBill } from "@/lib/types"
+import type { ApiShopBill, ApiRoute } from "@/lib/types"
 
 function paymentBadge(mode: string) {
   switch (mode?.toLowerCase()) {
@@ -32,25 +34,48 @@ function paymentBadge(mode: string) {
 
 export function BillingContent() {
   const [bills, setBills] = useState<ApiShopBill[]>([])
+  const [routes, setRoutes] = useState<ApiRoute[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [viewBill, setViewBill] = useState<ApiShopBill | null>(null)
 
+  // Filters
+  const [search, setSearch] = useState("")
+  const [routeId, setRouteId] = useState("all")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
+
   const fetchBills = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await api.get<ApiShopBill[]>("/bills")
-      setBills(res.data)
+      const params = new URLSearchParams()
+      if (routeId !== "all") params.append("route", routeId)
+      if (dateFrom) params.append("from", dateFrom)
+      if (dateTo) params.append("to", dateTo)
+
+      const [billsRes, routesRes] = await Promise.all([
+        api.get<ApiShopBill[]>(`/bills?${params.toString()}`),
+        api.get<ApiRoute[]>("/routes")
+      ])
+
+      setBills(billsRes.data)
+      setRoutes(routesRes.data)
       setError(null)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load bills")
+      setError(err instanceof Error ? err.message : "Failed to load data")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [routeId, dateFrom, dateTo])
 
   useEffect(() => { fetchBills() }, [fetchBills])
+
+  const filteredBills = bills.filter(b =>
+    b.billId.toLowerCase().includes(search.toLowerCase()) ||
+    b.shopName.toLowerCase().includes(search.toLowerCase()) ||
+    (b.routeName && b.routeName.toLowerCase().includes(search.toLowerCase()))
+  )
 
   return (
     <>
@@ -66,7 +91,47 @@ export function BillingContent() {
         </Button>
       </div>
 
-      <div className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg border border-border overflow-hidden">
+      <div className="flex flex-col sm:flex-row gap-4 bg-white/80 p-4 rounded-xl border border-border mt-2 shadow-sm">
+        <Input
+          placeholder="Search by Bill ID, Shop..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-xs bg-white"
+        />
+        <Select value={routeId} onValueChange={setRouteId}>
+          <SelectTrigger className="w-[180px] bg-white">
+            <SelectValue placeholder="All Routes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Routes</SelectItem>
+            {routes.map(r => (
+              <SelectItem key={r.routeId} value={r.routeId}>{r.routeName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-2 ml-auto">
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-[140px] bg-white text-sm"
+          />
+          <span className="text-muted-foreground text-sm">to</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-[140px] bg-white text-sm"
+          />
+          {(dateFrom || dateTo || routeId !== "all") && (
+            <Button variant="ghost" size="sm" onClick={() => {
+              setDateFrom(""); setDateTo(""); setRouteId("all"); setSearch("");
+            }}>Clear</Button>
+          )}
+        </div>
+      </div>
+
+      <div className="backdrop-blur-md bg-white/80 rounded-xl shadow-lg border border-border overflow-hidden mt-6">
         <Table>
           <TableHeader>
             <TableRow>
@@ -95,12 +160,16 @@ export function BillingContent() {
             {!loading && !error && bills.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                  No bills yet. Create one to get started.
+                  No bills yet matching filters.
                 </TableCell>
               </TableRow>
             )}
-            {!loading && !error && bills.map((bill) => (
-              <TableRow key={bill.billId} className="hover:bg-muted/50 transition-colors">
+            {!loading && !error && filteredBills.map((bill) => (
+              <TableRow
+                key={bill._id}
+                className="hover:bg-muted/30 transition-colors cursor-pointer"
+                onClick={() => setViewBill(bill)}
+              >
                 <TableCell className="pl-6 font-medium text-foreground">{bill.billId}</TableCell>
                 <TableCell className="text-foreground">{bill.shopName}</TableCell>
                 <TableCell className="hidden sm:table-cell text-muted-foreground">

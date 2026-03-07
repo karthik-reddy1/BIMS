@@ -25,14 +25,16 @@ import type { ApiProduct } from "@/lib/types"
 import api from "@/lib/api"
 
 type PurchaseItem = {
+  productKey: string   // "ProductName|PackType", e.g. "Thumbsup|RGB"
   productId: string
   cases: number
 }
 
 type EmptyReturn = {
   productId: string
-  goodReturning: number
-  brokenReturning: number
+  goodCases: number
+  goodBottles: number
+  brokenBottles: number
 }
 
 export function AddPurchaseDialog({
@@ -46,7 +48,7 @@ export function AddPurchaseDialog({
   onOpenChange: (open: boolean) => void
   onSaved?: () => void
 }) {
-  const [items, setItems] = useState<PurchaseItem[]>([{ productId: "", cases: 1 }])
+  const [items, setItems] = useState<PurchaseItem[]>([{ productId: "", productKey: "", cases: 1 }])
   const [transportBill, setTransportBill] = useState("")
   const [emptiesReturns, setEmptiesReturns] = useState<EmptyReturn[]>([])
   const [emptiesExpanded, setEmptiesExpanded] = useState(true)
@@ -64,7 +66,7 @@ export function AddPurchaseDialog({
 
   // Only show products mapped to this company
   const companyProducts = useMemo(
-    () => allProducts.filter((p) => p.brand === company?.name),
+    () => allProducts.filter((p) => (p.brand || "").toLowerCase() === (company?.name || "").toLowerCase()),
     [allProducts, company]
   )
 
@@ -74,46 +76,50 @@ export function AddPurchaseDialog({
     [companyProducts]
   )
 
+  const initEmpties = useCallback(() => {
+    setEmptiesReturns(
+      rgbProducts.map((p) => ({
+        productId: p.productId,
+        goodCases: 0,
+        goodBottles: 0,
+        brokenBottles: 0,
+      }))
+    )
+  }, [rgbProducts])
+
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (nextOpen) {
-        setEmptiesReturns(
-          rgbProducts.map((p) => ({
-            productId: p.productId,
-            goodReturning: 0,
-            brokenReturning: 0,
-          }))
-        )
-        setItems([{ productId: "", cases: 1 }])
+        initEmpties()
+        setItems([{ productId: "", productKey: "", cases: 1 }])
         setTransportBill("")
         setError(null)
       }
       onOpenChange(nextOpen)
     },
-    [rgbProducts, onOpenChange]
+    [initEmpties, onOpenChange]
   )
 
   // Re-init empties when products load
   useEffect(() => {
-    if (open && rgbProducts.length > 0) {
-      setEmptiesReturns(
-        rgbProducts.map((p) => ({
-          productId: p.productId,
-          goodReturning: 0,
-          brokenReturning: 0,
-        }))
-      )
+    if (open && rgbProducts.length > 0 && emptiesReturns.length === 0) {
+      initEmpties()
     }
-  }, [rgbProducts, open])
+  }, [rgbProducts, open, emptiesReturns.length, initEmpties])
 
-  const addItem = () => setItems([...items, { productId: "", cases: 1 }])
+  const addItem = () => setItems([...items, { productId: "", productKey: "", cases: 1 }])
   const removeItem = (index: number) => setItems(items.filter((_, i) => i !== index))
   const updateItem = (index: number, field: keyof PurchaseItem, value: string | number) => {
     const next = [...items]
-    next[index] = { ...next[index], [field]: value }
+    if (field === "productKey") {
+      // reset variant when product+packType changes
+      next[index] = { ...next[index], productKey: value as string, productId: "" }
+    } else {
+      next[index] = { ...next[index], [field]: value }
+    }
     setItems(next)
   }
-  const updateEmpty = (productId: string, field: "goodReturning" | "brokenReturning", value: number) => {
+  const updateEmpty = (productId: string, field: keyof EmptyReturn, value: number) => {
     setEmptiesReturns((prev) =>
       prev.map((e) => (e.productId === productId ? { ...e, [field]: value } : e))
     )
@@ -129,8 +135,13 @@ export function AddPurchaseDialog({
   const transport = Number(transportBill) || 0
 
   const brokenPayment = useMemo(() => {
-    return emptiesReturns.reduce((sum, e) => sum + e.brokenReturning * 3, 0)
-  }, [emptiesReturns])
+    return emptiesReturns.reduce((sum, e) => {
+      const product = rgbProducts.find(p => p.productId === e.productId)
+      if (!product) return sum
+      const totalBroken = e.brokenBottles
+      return sum + (totalBroken * 3)
+    }, 0)
+  }, [emptiesReturns, rgbProducts])
 
   const grandTotal = productTotal + transport + brokenPayment
 
@@ -148,6 +159,24 @@ export function AddPurchaseDialog({
       setError("Please add at least one item")
       return
     }
+
+    // Validate empty returns don't exceed available stock
+    for (const e of emptiesReturns) {
+      const product = rgbProducts.find(prod => prod.productId === e.productId)
+      if (!product) continue
+
+      const goodCount = (e.goodCases * product.bottlesPerCase) + e.goodBottles
+      if (goodCount > product.emptyStock.good) {
+        setError(`Cannot return more good ${product.productName} than available (${product.emptyStock.good}).`)
+        return
+      }
+      const brokenCount = e.brokenBottles
+      if (brokenCount > product.emptyStock.broken) {
+        setError(`Cannot return more broken ${product.productName} than available (${product.emptyStock.broken}).`)
+        return
+      }
+    }
+
     try {
       setSaving(true)
       setError(null)
@@ -157,12 +186,16 @@ export function AddPurchaseDialog({
         items: validItems.map((i) => ({ productId: i.productId, cases: i.cases })),
         transportBill: transport,
         emptiesReturned: emptiesReturns
-          .filter((e) => e.goodReturning > 0 || e.brokenReturning > 0)
-          .map((e) => ({
-            productId: e.productId,
-            goodBottles: e.goodReturning,
-            brokenBottles: e.brokenReturning,
-          })),
+          .map((e) => {
+            const product = rgbProducts.find(prod => prod.productId === e.productId)
+            if (!product) return { productId: e.productId, goodBottles: 0, brokenBottles: 0 }
+            return {
+              productId: e.productId,
+              goodBottles: (e.goodCases * product.bottlesPerCase) + e.goodBottles,
+              brokenBottles: e.brokenBottles
+            }
+          })
+          .filter((e) => e.goodBottles > 0 || e.brokenBottles > 0)
       })
       onSaved?.()
       handleOpenChange(false)
@@ -210,28 +243,62 @@ export function AddPurchaseDialog({
               const itemTotal = product ? product.casePrice * item.cases : 0
 
               return (
-                <div key={index} className="bg-white/50 backdrop-blur-sm p-4 rounded-lg border border-border">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end">
-                    <div className="sm:col-span-5 flex flex-col gap-1.5">
+                <div key={index} className="bg-white/50 backdrop-blur-sm p-4 rounded-lg border border-border flex flex-col gap-3">
+                  {/* Row 1: Product selectors */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Product Name + PackType */}
+                    <div className="flex flex-col gap-1.5">
                       <Label className="text-xs text-muted-foreground">Product</Label>
-                      <Select value={item.productId} onValueChange={(v) => updateItem(index, "productId", v)}>
+                      <Select value={item.productKey} onValueChange={(v) => updateItem(index, "productKey", v)}>
                         <SelectTrigger className="bg-white/80 border-border">
                           <SelectValue placeholder="Select product" />
                         </SelectTrigger>
                         <SelectContent>
-                          {companyProducts.map((p) => (
-                            <SelectItem key={p.productId} value={p.productId}>
-                              <span className="flex items-center gap-2">
-                                {p.productName}
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{p.packType}</Badge>
-                              </span>
-                            </SelectItem>
-                          ))}
+                          {Array.from(
+                            new Map(
+                              companyProducts.map(p => [`${p.productName}|${p.packType}`, p])
+                            ).values()
+                          )
+                            .sort((a, b) => a.productName.localeCompare(b.productName))
+                            .map((p) => (
+                              <SelectItem key={`${p.productName}|${p.packType}`} value={`${p.productName}|${p.packType}`}>
+                                <span className="flex items-center gap-2">
+                                  <span>{p.productName}</span>
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{p.packType}</Badge>
+                                </span>
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                     </div>
 
-                    <div className="sm:col-span-2 flex flex-col gap-1.5">
+                    {/* Size Variant */}
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Size</Label>
+                      <Select
+                        value={item.productId}
+                        onValueChange={(v) => updateItem(index, "productId", v)}
+                        disabled={!item.productKey}
+                      >
+                        <SelectTrigger className="bg-white/80 border-border">
+                          <SelectValue placeholder={item.productKey ? "Select size" : "Pick product first"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {companyProducts
+                            .filter(p => `${p.productName}|${p.packType}` === item.productKey)
+                            .map((p) => (
+                              <SelectItem key={p.productId} value={p.productId}>
+                                {p.size}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Row 2: Cases, Price, Total, Delete */}
+                  <div className="flex items-end gap-3">
+                    <div className="flex flex-col gap-1.5 w-28">
                       <Label className="text-xs text-muted-foreground">Cases</Label>
                       <Input
                         type="number"
@@ -241,36 +308,34 @@ export function AddPurchaseDialog({
                         className="bg-white/80 border-border"
                       />
                       {product && (
-                        <span className="text-xs text-muted-foreground">= {totalBottles} bottles</span>
+                        <span className="text-xs text-muted-foreground">{totalBottles} btl</span>
                       )}
                     </div>
 
-                    <div className="sm:col-span-2 flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5">
                       <Label className="text-xs text-muted-foreground">Case Price</Label>
                       <div className="h-9 flex items-center text-sm font-medium text-foreground">
                         {product ? `₹${product.casePrice}` : "—"}
                       </div>
                     </div>
 
-                    <div className="sm:col-span-2 flex flex-col gap-1.5">
+                    <div className="flex-1 flex flex-col gap-1.5">
                       <Label className="text-xs text-muted-foreground">Total</Label>
                       <div className="h-9 flex items-center text-lg font-bold text-primary">
                         ₹{itemTotal.toLocaleString("en-IN")}
                       </div>
                     </div>
 
-                    <div className="sm:col-span-1 flex items-end justify-end">
-                      {items.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                          onClick={() => removeItem(index)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
+                    {items.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-muted-foreground hover:text-destructive mb-0.5"
+                        onClick={() => removeItem(index)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               )
@@ -313,53 +378,91 @@ export function AddPurchaseDialog({
               {emptiesExpanded && (
                 <div className="flex flex-col gap-3">
                   {rgbProducts.map((rgbProduct) => {
-                    const emptyReturn = emptiesReturns.find((e) => e.productId === rgbProduct.productId)
-                    const good = emptyReturn?.goodReturning ?? 0
-                    const broken = emptyReturn?.brokenReturning ?? 0
-                    const brokenCost = broken * 3
+                    const emptyReturn = emptiesReturns.find((e) => e.productId === rgbProduct.productId) || {
+                      productId: rgbProduct.productId, goodCases: 0, goodBottles: 0, brokenBottles: 0
+                    }
+
+                    const totalGood = (emptyReturn.goodCases * rgbProduct.bottlesPerCase) + emptyReturn.goodBottles
+                    const totalBroken = emptyReturn.brokenBottles
+                    const brokenCost = totalBroken * (rgbProduct.brokenPrice || 0)
+
+                    // Format good stock as cases + loose bottles
+                    const goodCs = Math.floor(rgbProduct.emptyStock.good / rgbProduct.bottlesPerCase)
+                    const goodLs = rgbProduct.emptyStock.good % rgbProduct.bottlesPerCase
+                    const goodAvailDisplay = goodCs > 0 && goodLs > 0
+                      ? `${goodCs}C + ${goodLs}B`
+                      : goodCs > 0 ? `${goodCs}C` : `${goodLs}B`
 
                     return (
                       <div key={rgbProduct.productId} className="bg-white/50 p-4 rounded-lg border border-border">
-                        <div className="flex flex-col gap-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-foreground">{rgbProduct.productName}</span>
+                        <div className="flex flex-col gap-4">
+                          <div className="flex items-center justify-between border-b pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-foreground">{rgbProduct.productName}</span>
+                              <span className="text-xs text-muted-foreground">{rgbProduct.size}</span>
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{rgbProduct.packType}</Badge>
+                            </div>
                             <span className="text-xs text-muted-foreground">
-                              Available: {rgbProduct.emptyStock.good} good, {rgbProduct.emptyStock.broken} broken
+                              Available: <strong className="text-foreground">{goodAvailDisplay}</strong> good, <strong className="text-foreground">{rgbProduct.emptyStock.broken}</strong> broken
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div className="flex flex-col gap-1.5">
-                              <Label className="text-xs text-muted-foreground">Good Returning</Label>
-                              <Input
-                                type="number"
-                                min={0}
-                                max={rgbProduct.emptyStock.good}
-                                value={good}
-                                onChange={(e) =>
-                                  updateEmpty(rgbProduct.productId, "goodReturning", Math.min(parseInt(e.target.value) || 0, rgbProduct.emptyStock.good))
-                                }
-                                className="bg-white/80 border-border"
-                              />
-                              <span className="text-xs text-muted-foreground">max: {rgbProduct.emptyStock.good}</span>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Good Returning */}
+                            <div className="space-y-3">
+                              <Label className="text-xs font-semibold text-foreground">Good Returning</Label>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1.5">
+                                  <Label className="text-[10px] text-muted-foreground">Cases</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={emptyReturn.goodCases}
+                                    onChange={(e) => updateEmpty(rgbProduct.productId, "goodCases", parseInt(e.target.value) || 0)}
+                                    className="bg-white/80 border-border h-8 text-sm"
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  <Label className="text-[10px] text-muted-foreground">Loose Bottles</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={emptyReturn.goodBottles}
+                                    onChange={(e) => updateEmpty(rgbProduct.productId, "goodBottles", parseInt(e.target.value) || 0)}
+                                    className="bg-white/80 border-border h-8 text-sm"
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-xs text-right mt-1">
+                                <span className={totalGood > rgbProduct.emptyStock.good ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                                  Total: {totalGood} / {rgbProduct.emptyStock.good}
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex flex-col gap-1.5">
-                              <Label className="text-xs text-muted-foreground">Broken from Warehouse</Label>
-                              <Input
-                                type="number"
-                                min={0}
-                                max={rgbProduct.emptyStock.broken}
-                                value={broken}
-                                onChange={(e) =>
-                                  updateEmpty(rgbProduct.productId, "brokenReturning", Math.min(parseInt(e.target.value) || 0, rgbProduct.emptyStock.broken))
-                                }
-                                className="bg-white/80 border-border"
-                              />
-                              <span className="text-xs text-muted-foreground">max: {rgbProduct.emptyStock.broken}</span>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                              <Label className="text-xs text-warning-foreground">Money for Broken</Label>
-                              <div className="h-9 flex items-center text-sm font-medium text-warning-foreground">₹{brokenCost}</div>
-                              <span className="text-xs text-muted-foreground">broken × ₹3</span>
+
+                            {/* Broken Returning */}
+                            <div className="space-y-3">
+                              <Label className="text-xs font-semibold text-foreground flex justify-between">
+                                <span>Broken Returning</span>
+                                <span className="text-warning-foreground">Credit: ₹{brokenCost}</span>
+                              </Label>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1.5 col-span-2">
+                                  <Label className="text-[10px] text-muted-foreground">Broken Bottles</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={emptyReturn.brokenBottles}
+                                    onChange={(e) => updateEmpty(rgbProduct.productId, "brokenBottles", parseInt(e.target.value) || 0)}
+                                    className="bg-white/80 border-border h-8 text-sm"
+                                  />
+                                </div>
+                              </div>
+                              <div className="text-xs text-right mt-1">
+                                <span className={totalBroken > rgbProduct.emptyStock.broken ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                                  Total: {totalBroken} / {rgbProduct.emptyStock.broken}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -390,8 +493,8 @@ export function AddPurchaseDialog({
               </div>
               {brokenPayment > 0 && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Broken Payment</span>
-                  <span className="font-medium text-warning-foreground">₹{brokenPayment}</span>
+                  <span className="text-muted-foreground">Broken Payment Credit</span>
+                  <span className="font-medium text-warning-foreground">~ ₹{brokenPayment}</span>
                 </div>
               )}
               <Separator className="my-2" />

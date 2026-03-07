@@ -70,7 +70,7 @@ router.get('/', async (req, res) => {
         if (req.query.packType) filter.packType = req.query.packType.toUpperCase();
         if (req.query.brand) filter.brand = { $regex: req.query.brand, $options: 'i' };
         if (req.query.isReturnable !== undefined) filter.isReturnable = req.query.isReturnable === 'true';
-        if (req.query.group) filter.productGroup = { $regex: `^${req.query.group}$`, $options: 'i' };
+        if (req.query.group) filter.productName = { $regex: `^${req.query.group}$`, $options: 'i' };
         const products = await Product.find(filter).sort({ productName: 1, packType: 1, size: 1 });
         sendSuccess(res, products);
     } catch (err) {
@@ -112,7 +112,7 @@ router.put('/:productId', async (req, res) => {
         void __;
 
         // Apply allowed top-level fields
-        const allowedFields = ['productGroup', 'brand', 'productName', 'mrp', 'casePrice', 'bottlesPerCase', 'perBottlePrice'];
+        const allowedFields = ['productGroup', 'brand', 'productName', 'mrp', 'casePrice', 'bottlesPerCase', 'perBottlePrice', 'brokenPrice'];
         for (const field of allowedFields) {
             if (body[field] !== undefined) product[field] = body[field];
         }

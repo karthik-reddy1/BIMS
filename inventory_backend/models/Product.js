@@ -17,11 +17,8 @@ const ProductSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
-  },
-  productGroup: {
-    type: String,
-    trim: true,
-    default: ''   // defaults to empty; frontend falls back to productName if empty
+    // productName IS the product group — e.g. "Thumbsup". 
+    // Individual variants are identified by productName + packType + size.
   },
   size: {
     type: String,
@@ -58,6 +55,11 @@ const ProductSchema = new mongoose.Schema({
   perBottlePrice: {
     type: Number,
     default: 0
+  },
+  brokenPrice: {
+    type: Number,
+    default: 0,   // price per broken bottle returned (RGB / returnable only)
+    min: 0
   },
 
   // Stock Tracking

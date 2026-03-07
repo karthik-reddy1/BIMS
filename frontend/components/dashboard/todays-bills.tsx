@@ -25,18 +25,20 @@ export function TodaysBills() {
   const [totalSales, setTotalSales] = useState(0)
 
   useEffect(() => {
-    // Fetch all bills and filter down to exactly today's date
-    const today = new Date().setHours(0, 0, 0, 0)
+    // Fetch only today's bills from backend
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
 
-    api.get<ApiShopBill[]>("/bills").then((res) => {
-      const todaysBills = res.data.filter(bill => {
-        const billDate = new Date(bill.billDate).setHours(0, 0, 0, 0)
-        return billDate === today
+    const todayEnd = new Date()
+    todayEnd.setHours(23, 59, 59, 999)
+
+    api.get<ApiShopBill[]>(`/bills?from=${todayStart.toISOString()}&to=${todayEnd.toISOString()}`)
+      .then((res) => {
+        const todaysBills = res.data
+        setBills(todaysBills)
+        setTotalSales(todaysBills.reduce((sum, bill) => sum + (bill.grandTotal || 0), 0))
       })
-
-      setBills(todaysBills)
-      setTotalSales(todaysBills.reduce((sum, bill) => sum + (bill.grandTotal || 0), 0))
-    }).catch(() => { })
+      .catch(() => { })
   }, [])
 
   // Reusable function to render the table content

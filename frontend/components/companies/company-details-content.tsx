@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table"
 import { MakePaymentDialog } from "@/components/companies/make-payment-dialog"
 import { AddPurchaseDialog } from "@/components/companies/add-purchase-dialog"
+import { PurchaseDetailModal } from "@/components/companies/purchase-detail-modal"
 import type { ApiCompany, ApiPurchase } from "@/lib/types"
 import { mapApiCompany, type Company } from "@/components/companies/companies-content"
 import api from "@/lib/api"
@@ -41,6 +42,7 @@ export function CompanyDetailsContent({ companyId }: { companyId: string }) {
   const [loading, setLoading] = useState(true)
   const [payOpen, setPayOpen] = useState(searchParams.get("pay") === "true")
   const [purchaseOpen, setPurchaseOpen] = useState(false)
+  const [viewPurchase, setViewPurchase] = useState<ApiPurchase | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -206,7 +208,12 @@ export function CompanyDetailsContent({ companyId }: { companyId: string }) {
                   <TableCell className="font-medium text-foreground">₹{(purchase as unknown as { amountDue: number }).amountDue?.toLocaleString("en-IN") ?? "—"}</TableCell>
                   <TableCell>{statusBadge(purchase.paymentStatus)}</TableCell>
                   <TableCell className="pr-4 text-right">
-                    <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-foreground">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => setViewPurchase(purchase)}
+                    >
                       <Eye className="h-4 w-4 mr-1" />
                       View
                     </Button>
@@ -230,6 +237,11 @@ export function CompanyDetailsContent({ companyId }: { companyId: string }) {
         open={purchaseOpen}
         onOpenChange={setPurchaseOpen}
         onSaved={fetchData}
+      />
+      <PurchaseDetailModal
+        purchase={viewPurchase}
+        open={!!viewPurchase}
+        onOpenChange={(o) => { if (!o) setViewPurchase(null) }}
       />
     </div>
   )

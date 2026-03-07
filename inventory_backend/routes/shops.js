@@ -72,6 +72,31 @@ router.post('/:shopId/payment', async (req, res) => {
         const shop = await Shop.findOne({ shopId: req.params.shopId.toUpperCase() });
         if (!shop) return sendError(res, 'Shop not found', 404);
 
+        // 1. Distribute payment across unpaid bills (oldest first)
+        const ShopBill = require('../models/ShopBill');
+        const unpaidBills = await ShopBill.find({
+            shopId: shop.shopId,
+            $expr: { $gt: ["$grandTotal", "$paymentReceived"] }
+        }).sort({ billDate: 1 });
+
+        let remainingAmount = amount;
+        for (const bill of unpaidBills) {
+            if (remainingAmount <= 0) break;
+
+            const billDue = bill.grandTotal - (bill.paymentReceived || 0);
+            const applyAmount = Math.min(billDue, remainingAmount);
+
+            bill.paymentReceived = (bill.paymentReceived || 0) + applyAmount;
+
+            // Auto update payment mode to split/partial if the bill is now not purely its original mode? 
+            // In our system, typically "Receipt"/credit payment doesn't strictly mutate the bill's literal first mode, 
+            // but we update the paymentReceived sum.
+            await bill.save();
+
+            remainingAmount -= applyAmount;
+        }
+
+        // 2. Reduce the master outstanding amount
         shop.outstandingAmount = Math.max(0, (shop.outstandingAmount || 0) - amount);
         await shop.save();
 

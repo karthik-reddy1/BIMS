@@ -6,9 +6,8 @@
 export interface ApiProduct {
     _id: string
     productId: string
-    productGroup: string      // new grouping field (e.g. "Thumbsup")
     brand: string
-    productName: string
+    productName: string          // serves as both name and group key (e.g. "Thumbsup")
     size: string
     packType: 'RGB' | 'PET' | 'CAN' | 'TTP' | 'MTP'
     isReturnable: boolean
@@ -16,6 +15,7 @@ export interface ApiProduct {
     bottlesPerCase: number
     casePrice: number
     perBottlePrice: number
+    brokenPrice: number
     filledStock: {
         cases: number
         looseBottles: number
@@ -118,6 +118,8 @@ export interface ApiPurchase {
     brokenPayment: number
     grandTotal: number
     paymentStatus: 'pending' | 'partial' | 'paid'
+    amountPaid?: number
+    amountDue?: number
     createdAt: string
     updatedAt: string
 }
@@ -131,6 +133,7 @@ export interface ApiBillItem {
     quantity: number
     mrp: number
     isReturnable: boolean
+    bottlesPerCase?: number
 }
 
 export interface ApiShopBill {

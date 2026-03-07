@@ -30,9 +30,22 @@ export function ReportsContent() {
   const fetchReport = useCallback(async () => {
     try {
       setLoading(true)
-      const to = new Date()
-      const from = new Date()
-      from.setDate(to.getDate() - parseInt(days))
+      let from: Date, to: Date
+
+      if (days === "1") {
+        // Today: midnight → 23:59:59
+        from = new Date(); from.setHours(0, 0, 0, 0)
+        to = new Date(); to.setHours(23, 59, 59, 999)
+      } else if (days === "0") {
+        // Yesterday: previous day midnight → 23:59:59
+        from = new Date(); from.setDate(from.getDate() - 1); from.setHours(0, 0, 0, 0)
+        to = new Date(); to.setDate(to.getDate() - 1); to.setHours(23, 59, 59, 999)
+      } else {
+        // Rolling window: last N days
+        to = new Date()
+        from = new Date(); from.setDate(to.getDate() - parseInt(days))
+      }
+
       const res = await api.get<PLReport>(
         `/reports/profit-loss?from=${from.toISOString()}&to=${to.toISOString()}`
       )
@@ -98,7 +111,7 @@ export function ReportsContent() {
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h1 className="text-3xl font-bold text-foreground">Profit & Loss Report</h1>
         <div className="flex items-center gap-3">
           <Select value={days} onValueChange={setDays}>
@@ -106,6 +119,8 @@ export function ReportsContent() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="1">Today</SelectItem>
+              <SelectItem value="0">Yesterday</SelectItem>
               <SelectItem value="7">Last 7 Days</SelectItem>
               <SelectItem value="30">Last 30 Days</SelectItem>
               <SelectItem value="90">Last 90 Days</SelectItem>
@@ -113,7 +128,7 @@ export function ReportsContent() {
           </Select>
           <Button
             variant="outline"
-            className="border-border"
+            className="border-border bg-white"
             onClick={() => {
               if (typeof window !== "undefined" && (window as any).triggerExcelExport) {
                 (window as any).triggerExcelExport()
